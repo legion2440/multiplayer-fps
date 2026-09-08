@@ -33,6 +33,24 @@ jobs:
 
           replace_once(
               "src/bin/server.rs",
+              """struct InputState {\n    forward: f32,\n    strafe: f32,\n    turn: f32,\n}\n""",
+              """struct InputState {\n    forward: f32,\n    strafe: f32,\n}\n""",
+          )
+
+          replace_once(
+              "src/bin/server.rs",
+              """                strafe,\n                turn,\n                angle,\n""",
+              """                strafe,\n                turn: _,\n                angle,\n""",
+          )
+
+          replace_once(
+              "src/bin/server.rs",
+              """                    player.input = InputState {\n                        forward,\n                        strafe,\n                        turn,\n                    };\n""",
+              """                    player.input = InputState { forward, strafe };\n""",
+          )
+
+          replace_once(
+              "src/bin/server.rs",
               """            player.input.forward,\n            player.input.strafe,\n            player.input.turn,\n            dt,\n""",
               """            player.input.forward,\n            player.input.strafe,\n            0.0,\n            dt,\n""",
           )
