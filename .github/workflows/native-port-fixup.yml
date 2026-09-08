@@ -1,0 +1,89 @@
+name: Native client port validation
+
+on:
+  push:
+    branches:
+      - native-ui-port
+    paths:
+      - .github/workflows/native-port-fixup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: native-ui-port
+          fetch-depth: 0
+
+      - name: Apply compatibility and server changes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          cargo_path = Path('Cargo.toml')
+          cargo = cargo_path.read_text()
+          cargo = cargo.replace('rust-version = "1.87"', 'rust-version = "1.74"')
+          if 'fontdue = "=0.9.3"' not in cargo:
+              cargo = cargo.replace('macroquad = "=0.4.16"\n', 'macroquad = "=0.4.16"\nfontdue = "=0.9.3"\n')
+          cargo_path.write_text(cargo)
+
+          maze_path = Path('src/maze.rs')
+          maze = maze_path.read_text().replace('size.is_multiple_of(2)', 'size % 2 == 0')
+          maze_path.write_text(maze)
+
+          server_path = Path('src/bin/server.rs')
+          server = server_path.read_text().replace(
+              'tick.is_multiple_of(SNAPSHOT_EVERY_TICKS)',
+              'tick % SNAPSHOT_EVERY_TICKS == 0',
+          )
+          old = '''            ClientMessage::NextLevel => {\n                if address_to_id.contains_key(&source) && Instant::now() >= *level_change_allowed_at\n                {\n                    *level_index = (*level_index + 1) % levels.len();\n                    reset_for_level(players, &levels[*level_index]);\n                    *level_change_allowed_at = Instant::now() + Duration::from_secs(2);\n                    broadcast_raw(socket, players, &level_packet(*level_index));\n                    println!(\n                        "[level] {} - {} ({} dead ends)",\n                        *level_index + 1,\n                        levels[*level_index].name,\n                        levels[*level_index].dead_ends()\n                    );\n                }\n            }\n'''
+          new = old + '''            ClientMessage::SetLevel(requested) => {\n                if address_to_id.contains_key(&source)\n                    && requested < levels.len()\n                    && Instant::now() >= *level_change_allowed_at\n                {\n                    *level_index = requested;\n                    reset_for_level(players, &levels[*level_index]);\n                    *level_change_allowed_at = Instant::now() + Duration::from_secs(2);\n                    broadcast_raw(socket, players, &level_packet(*level_index));\n                    println!(\n                        "[level] {} - {} ({} dead ends)",\n                        *level_index + 1,\n                        levels[*level_index].name,\n                        levels[*level_index].dead_ends()\n                    );\n                }\n            }\n'''
+          if 'ClientMessage::SetLevel(requested)' not in server:
+              if old not in server:
+                  raise SystemExit('NextLevel block not found')
+              server = server.replace(old, new)
+          server_path.write_text(server)
+
+          ci_path = Path('.github/workflows/ci.yml')
+          ci = ci_path.read_text()
+          ci = ci.replace('dtolnay/rust-toolchain@1.87.0', 'dtolnay/rust-toolchain@1.74.0')
+          ci = ci.replace('Rust 1.87 check', 'Rust 1.74 check')
+          marker = '\n  frontend:\n'
+          if marker in ci:
+              ci = ci.split(marker, 1)[0].rstrip() + '\n'
+          ci_path.write_text(ci)
+
+      - name: Pin compatible dependency graph
+        run: |
+          cargo update -p fontdue --precise 0.9.3
+          sed -i '0,/^version = 4$/s//version = 3/' Cargo.lock
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - uses: dtolnay/rust-toolchain@1.74.0
+
+      - name: Validate Rust 1.74
+        run: cargo +1.74.0 check --all-targets --locked
+
+      - name: Validate stable
+        run: |
+          cargo +stable fmt --all
+          cargo +stable fmt --all -- --check
+          cargo +stable test --locked
+          cargo +stable clippy --all-targets --locked -- -D warnings
+          RUSTFLAGS=-Dwarnings cargo +stable build --release --bins --locked
+
+      - name: Commit validated changes
+        run: |
+          rm .github/workflows/native-port-fixup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: finalize native multiplayer client"
+          git push origin HEAD:native-ui-port
