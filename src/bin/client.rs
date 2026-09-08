@@ -11,6 +11,16 @@ use std::io;
 use std::net::UdpSocket;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+fn draw_text<T: AsRef<str>>(
+    text: T,
+    x: f32,
+    y: f32,
+    font_size: f32,
+    color: Color,
+) -> TextDimensions {
+    macroquad::prelude::draw_text(text.as_ref(), x, y, font_size, color)
+}
+
 const DEFAULT_SERVER: &str = "127.0.0.1:34254";
 const HOSTS_FILE: &str = "hosts.json";
 const CUSTOM_LEVEL_FILE: &str = "custom_level.json";
@@ -177,6 +187,7 @@ enum AppScreen {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 struct Palette {
     bg: Color,
     panel: Color,
@@ -259,8 +270,21 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
     draw_shadowed_panel(panel, Color::new(0.025, 0.035, 0.065, 0.98), SKYBLUE);
 
     let icon = Rect::new(panel.x + 26.0, panel.y + 24.0, 48.0, 48.0);
-    draw_rectangle(icon.x, icon.y, icon.w, icon.h, Color::new(0.03, 0.28, 0.34, 1.0));
-    draw_rectangle_lines(icon.x, icon.y, icon.w, icon.h, 1.0, Color::new(0.2, 0.8, 0.9, 0.8));
+    draw_rectangle(
+        icon.x,
+        icon.y,
+        icon.w,
+        icon.h,
+        Color::new(0.03, 0.28, 0.34, 1.0),
+    );
+    draw_rectangle_lines(
+        icon.x,
+        icon.y,
+        icon.w,
+        icon.h,
+        1.0,
+        Color::new(0.2, 0.8, 0.9, 0.8),
+    );
     draw_centered("MW", icon, 21.0, Color::new(0.65, 0.96, 1.0, 1.0));
 
     draw_text(
@@ -318,15 +342,30 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
         screen.active = ActiveField::Alias;
     }
 
-    let network_card = Rect::new(panel.x + 28.0, panel.y + 362.0, (panel.w - 68.0) * 0.5, 74.0);
+    let network_card = Rect::new(
+        panel.x + 28.0,
+        panel.y + 362.0,
+        (panel.w - 68.0) * 0.5,
+        74.0,
+    );
     let ai_card = Rect::new(
         network_card.x + network_card.w + 12.0,
         network_card.y,
         network_card.w,
         network_card.h,
     );
-    draw_status_card(network_card, "UDP NETWORK", "Real client-server transport", SKYBLUE);
-    draw_status_card(ai_card, "SERVER AI READY", "Bots stay authoritative", Color::new(0.35, 0.95, 0.65, 1.0));
+    draw_status_card(
+        network_card,
+        "UDP NETWORK",
+        "Real client-server transport",
+        SKYBLUE,
+    );
+    draw_status_card(
+        ai_card,
+        "SERVER AI READY",
+        "Bots stay authoritative",
+        Color::new(0.35, 0.95, 0.65, 1.0),
+    );
 
     draw_text(
         "SAVED HOSTS & QUICK RECONNECT",
@@ -352,7 +391,14 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
                 Color::new(0.035, 0.055, 0.09, 1.0)
             },
         );
-        draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.0, Color::new(0.12, 0.18, 0.25, 1.0));
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            1.0,
+            Color::new(0.12, 0.18, 0.25, 1.0),
+        );
         let label = format!("{}   {}   [{}]", host.alias, host.address, host.username);
         draw_text(
             shorten(&label, 58),
@@ -373,8 +419,18 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
         screen.status = format!("Loaded host '{}'.", host.alias);
     }
 
-    let connect_rect = Rect::new(panel.x + 28.0, panel.y + panel.h - 74.0, panel.w - 220.0, 46.0);
-    let editor_rect = Rect::new(panel.x + panel.w - 180.0, panel.y + panel.h - 74.0, 152.0, 46.0);
+    let connect_rect = Rect::new(
+        panel.x + 28.0,
+        panel.y + panel.h - 74.0,
+        panel.w - 220.0,
+        46.0,
+    );
+    let editor_rect = Rect::new(
+        panel.x + panel.w - 180.0,
+        panel.y + panel.h - 74.0,
+        152.0,
+        46.0,
+    );
     let connect_clicked = draw_gradient_like_button(
         connect_rect,
         if screen.pending.is_some() {
@@ -489,7 +545,8 @@ fn update_game(mut game: GameState) -> AppScreen {
     game.display_frame_ms += (dt * 1000.0 - game.display_frame_ms) * alpha;
     game.shot_flash = (game.shot_flash - dt).max(0.0);
     game.damage_flash = (game.damage_flash - dt).max(0.0);
-    game.kill_feed.retain(|entry| Instant::now() < entry.expires_at);
+    game.kill_feed
+        .retain(|entry| Instant::now() < entry.expires_at);
 
     if game.reload_timer > 0.0 {
         game.reload_timer = (game.reload_timer - dt).max(0.0);
@@ -551,7 +608,8 @@ fn update_game(mut game: GameState) -> AppScreen {
                     disconnect(&game);
                     return AppScreen::Editor(EditorState {
                         maze: Maze::generated("Editor Maze", "Custom", 21, 21, time_seed()),
-                        status: "Left click toggles walls. G generates, S saves, L loads.".to_string(),
+                        status: "Left click toggles walls. G generates, S saves, L loads."
+                            .to_string(),
                         generation_size: 21,
                     });
                 }
@@ -747,7 +805,13 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
     let palette = palette(VisualTheme::Classic);
     clear_background(palette.bg);
 
-    draw_rectangle(0.0, 0.0, screen_width(), 78.0, Color::new(0.015, 0.022, 0.04, 1.0));
+    draw_rectangle(
+        0.0,
+        0.0,
+        screen_width(),
+        78.0,
+        Color::new(0.015, 0.022, 0.04, 1.0),
+    );
     draw_line(0.0, 78.0, screen_width(), 78.0, 1.0, palette.border);
     draw_text("MW", 24.0, 49.0, 28.0, palette.accent);
     draw_text("MAZE WARS 3D", 78.0, 36.0, 25.0, WHITE);
@@ -764,8 +828,21 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
     let grid_w = cell * editor.maze.width as f32;
     let grid_h = cell * editor.maze.height as f32;
 
-    draw_rectangle(left - 8.0, top - 8.0, grid_w + 16.0, grid_h + 16.0, palette.panel);
-    draw_rectangle_lines(left - 8.0, top - 8.0, grid_w + 16.0, grid_h + 16.0, 1.0, palette.border);
+    draw_rectangle(
+        left - 8.0,
+        top - 8.0,
+        grid_w + 16.0,
+        grid_h + 16.0,
+        palette.panel,
+    );
+    draw_rectangle_lines(
+        left - 8.0,
+        top - 8.0,
+        grid_w + 16.0,
+        grid_h + 16.0,
+        1.0,
+        palette.border,
+    );
 
     for y in 0..editor.maze.height {
         for x in 0..editor.maze.width {
@@ -776,7 +853,11 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
                 rect.y,
                 rect.w - 1.0,
                 rect.h - 1.0,
-                if wall { palette.wall } else { Color::new(0.02, 0.04, 0.06, 1.0) },
+                if wall {
+                    palette.wall
+                } else {
+                    Color::new(0.02, 0.04, 0.06, 1.0)
+                },
             );
         }
     }
@@ -791,7 +872,11 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
     }
 
     let button_y = screen_height() - 80.0;
-    let generate = draw_dark_button(Rect::new(34.0, button_y, 156.0, 44.0), "GENERATE [G]", false);
+    let generate = draw_dark_button(
+        Rect::new(34.0, button_y, 156.0, 44.0),
+        "GENERATE [G]",
+        false,
+    );
     let size = draw_dark_button(
         Rect::new(202.0, button_y, 138.0, 44.0),
         &format!("SIZE {}", editor.generation_size),
@@ -824,7 +909,7 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
     }
     if save || is_key_pressed(KeyCode::S) {
         editor.status = match serde_json::to_string_pretty(&editor.maze)
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
+            .map_err(io::Error::other)
             .and_then(|json| fs::write(CUSTOM_LEVEL_FILE, json))
         {
             Ok(()) => format!("Saved {CUSTOM_LEVEL_FILE}."),
@@ -832,10 +917,9 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
         };
     }
     if load || is_key_pressed(KeyCode::L) {
-        editor.status = match fs::read_to_string(CUSTOM_LEVEL_FILE).and_then(|json| {
-            serde_json::from_str::<Maze>(&json)
-                .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
-        }) {
+        editor.status = match fs::read_to_string(CUSTOM_LEVEL_FILE)
+            .and_then(|json| serde_json::from_str::<Maze>(&json).map_err(io::Error::other))
+        {
             Ok(maze) if maze.cells.len() == maze.width * maze.height => {
                 editor.generation_size = maze.width;
                 editor.maze = maze;
@@ -868,7 +952,13 @@ fn draw_game(game: &GameState) {
     draw_info_bar(game, palette);
 
     let view = game_view_rect();
-    draw_rectangle(view.x - 1.0, view.y - 1.0, view.w + 2.0, view.h + 2.0, palette.border);
+    draw_rectangle(
+        view.x - 1.0,
+        view.y - 1.0,
+        view.w + 2.0,
+        view.h + 2.0,
+        palette.border,
+    );
     draw_rectangle(view.x, view.y, view.w, view.h, BLACK);
     draw_world(game, view, palette);
     draw_feature_cards(palette);
@@ -903,7 +993,11 @@ fn draw_world(game: &GameState, view: Rect, palette: Palette) {
         *z = corrected;
         let wall_height = (view.h / corrected).min(view.h * 1.6);
         let fade = (1.0 / (1.0 + corrected * 0.11)).clamp(0.18, 0.95);
-        let base = if hit.side == 1 { palette.wall_side } else { palette.wall };
+        let base = if hit.side == 1 {
+            palette.wall_side
+        } else {
+            palette.wall
+        };
         let wall_color = Color::new(base.r * fade, base.g * fade, base.b * fade, 1.0);
         let x = view.x + index as f32 * view.w / ray_count as f32;
         draw_rectangle(
@@ -934,7 +1028,14 @@ fn draw_world(game: &GameState, view: Rect, palette: Palette) {
             view.h,
             Color::new(0.9, 0.06, 0.08, (game.damage_flash * 1.1).min(0.22)),
         );
-        draw_rectangle_lines(view.x + 2.0, view.y + 2.0, view.w - 4.0, view.h - 4.0, 8.0, Color::new(0.8, 0.0, 0.05, 0.3));
+        draw_rectangle_lines(
+            view.x + 2.0,
+            view.y + 2.0,
+            view.w - 4.0,
+            view.h - 4.0,
+            8.0,
+            Color::new(0.8, 0.0, 0.05, 0.3),
+        );
     }
 
     draw_weapon(game, view, palette);
@@ -948,7 +1049,13 @@ fn draw_world(game: &GameState, view: Rect, palette: Palette) {
     }
 
     if game.health == 0 {
-        draw_rectangle(view.x, view.y, view.w, view.h, Color::new(0.18, 0.0, 0.02, 0.78));
+        draw_rectangle(
+            view.x,
+            view.y,
+            view.w,
+            view.h,
+            Color::new(0.18, 0.0, 0.02, 0.78),
+        );
         let title = "HULL INTEGRITY COMPROMISED";
         let m = measure_text(title, None, 34, 1.0);
         draw_text(
@@ -978,7 +1085,13 @@ fn draw_world(game: &GameState, view: Rect, palette: Palette) {
             m.width + 28.0,
             30.0,
         );
-        draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.0, 0.0, 0.0, 0.65));
+        draw_rectangle(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            Color::new(0.0, 0.0, 0.0, 0.65),
+        );
         draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.0, palette.border);
         draw_text(hint, rect.x + 14.0, rect.y + 21.0, 16.0, palette.accent);
     }
@@ -1010,9 +1123,8 @@ fn draw_remote_players(
         if relative.abs() > game.settings.fov * 0.62 {
             continue;
         }
-        let screen_x = view.x
-            + view.w * 0.5
-            + (relative / (game.settings.fov * 0.5)) * view.w * 0.5;
+        let screen_x =
+            view.x + view.w * 0.5 + (relative / (game.settings.fov * 0.5)) * view.w * 0.5;
         if screen_x < view.x || screen_x > view.x + view.w {
             continue;
         }
@@ -1071,7 +1183,13 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
     let panel_y = view.y + 16.0;
     let server_rect = Rect::new(panel_x, panel_y, 190.0, 64.0);
     draw_hud_panel(server_rect, palette);
-    draw_text("SERVER", server_rect.x + 11.0, server_rect.y + 18.0, 12.0, palette.muted);
+    draw_text(
+        "SERVER",
+        server_rect.x + 11.0,
+        server_rect.y + 18.0,
+        12.0,
+        palette.muted,
+    );
     draw_text(
         shorten(&game.server, 23),
         server_rect.x + 11.0,
@@ -1090,7 +1208,11 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
     let fps_rect = Rect::new(panel_x, panel_y + 72.0, 190.0, 62.0);
     draw_hud_panel(fps_rect, palette);
     let fps = game.display_fps.round() as i32;
-    let fps_color = if fps >= 50 { palette.health } else { palette.danger };
+    let fps_color = if fps >= 50 {
+        palette.health
+    } else {
+        palette.danger
+    };
     draw_text(
         format!("{} FPS", fps),
         fps_rect.x + 11.0,
@@ -1106,7 +1228,11 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
         palette.muted,
     );
     draw_text(
-        if fps >= 50 { "01-EDU REQ >50 FPS" } else { "FPS BELOW REQUIREMENT" },
+        if fps >= 50 {
+            "01-EDU REQ >50 FPS"
+        } else {
+            "FPS BELOW REQUIREMENT"
+        },
         fps_rect.x + 11.0,
         fps_rect.y + 48.0,
         11.0,
@@ -1195,15 +1321,10 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
         25.0,
         WHITE,
     );
-    draw_text(
-        "FRAGS",
-        score.x + 72.0,
-        score.y + 45.0,
-        11.0,
-        palette.muted,
-    );
+    draw_text("FRAGS", score.x + 72.0, score.y + 45.0, 11.0, palette.muted);
 
-    let helper = "WASD Move   Mouse / arrows Turn   Space / Click Fire   R Reload   TAB Leaderboard";
+    let helper =
+        "WASD Move   Mouse / arrows Turn   Space / Click Fire   R Reload   TAB Leaderboard";
     let hm = measure_text(helper, None, 11, 1.0);
     let helper_rect = Rect::new(
         view.x + view.w * 0.5 - hm.width * 0.5 - 14.0,
@@ -1211,22 +1332,58 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
         hm.width + 28.0,
         20.0,
     );
-    draw_rectangle(helper_rect.x, helper_rect.y, helper_rect.w, helper_rect.h, Color::new(0.0, 0.0, 0.0, 0.72));
-    draw_rectangle_lines(helper_rect.x, helper_rect.y, helper_rect.w, helper_rect.h, 1.0, Color::new(0.1, 0.16, 0.23, 1.0));
-    draw_text(helper, helper_rect.x + 14.0, helper_rect.y + 14.0, 11.0, palette.muted);
+    draw_rectangle(
+        helper_rect.x,
+        helper_rect.y,
+        helper_rect.w,
+        helper_rect.h,
+        Color::new(0.0, 0.0, 0.0, 0.72),
+    );
+    draw_rectangle_lines(
+        helper_rect.x,
+        helper_rect.y,
+        helper_rect.w,
+        helper_rect.h,
+        1.0,
+        Color::new(0.1, 0.16, 0.23, 1.0),
+    );
+    draw_text(
+        helper,
+        helper_rect.x + 14.0,
+        helper_rect.y + 14.0,
+        11.0,
+        palette.muted,
+    );
 
     let mut y = view.y + 160.0;
     for entry in game.kill_feed.iter().rev().take(4) {
         let text = format!("{} > {}", entry.killer, entry.victim);
         let m = measure_text(&text, None, 12, 1.0);
         let rect = Rect::new(view.x + view.w - m.width - 28.0, y, m.width + 18.0, 23.0);
-        draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.0, 0.0, 0.0, 0.68));
-        draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.0, Color::new(0.1, 0.15, 0.22, 1.0));
+        draw_rectangle(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            Color::new(0.0, 0.0, 0.0, 0.68),
+        );
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            1.0,
+            Color::new(0.1, 0.15, 0.22, 1.0),
+        );
         draw_text(text, rect.x + 9.0, rect.y + 16.0, 12.0, LIGHTGRAY);
         y += 27.0;
     }
 
-    let level_note = format!("L{} / 3   {} dead ends", game.level_index + 1, maze.dead_ends());
+    let level_note = format!(
+        "L{} / 3   {} dead ends",
+        game.level_index + 1,
+        maze.dead_ends()
+    );
     draw_text(
         level_note,
         view.x + 16.0,
@@ -1263,7 +1420,11 @@ fn draw_minimap(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
         .values()
         .filter(|visual| visual.state.health > 0)
     {
-        let c = if visual.state.bot { palette.danger } else { palette.accent_alt };
+        let c = if visual.state.bot {
+            palette.danger
+        } else {
+            palette.accent_alt
+        };
         let px = left + visual.display_x * sx;
         let py = top + visual.display_y * sy;
         draw_circle(px, py, 3.0, c);
@@ -1325,14 +1486,45 @@ fn draw_weapon(game: &GameState, view: Rect, palette: Palette) {
         draw_circle(cx, bottom - 124.0, 28.0, Color::new(0.45, 0.9, 1.0, 0.38));
         draw_circle(cx, bottom - 124.0, 12.0, Color::new(0.8, 1.0, 1.0, 0.85));
     }
-    draw_rectangle(cx - 28.0, bottom - 112.0, 56.0, 112.0, Color::new(0.035, 0.05, 0.075, 0.98));
-    draw_rectangle(cx - 24.0, bottom - 108.0, 48.0, 16.0, Color::new(0.18, 0.22, 0.29, 1.0));
+    draw_rectangle(
+        cx - 28.0,
+        bottom - 112.0,
+        56.0,
+        112.0,
+        Color::new(0.035, 0.05, 0.075, 0.98),
+    );
+    draw_rectangle(
+        cx - 24.0,
+        bottom - 108.0,
+        48.0,
+        16.0,
+        Color::new(0.18, 0.22, 0.29, 1.0),
+    );
     draw_rectangle(cx - 12.0, bottom - 104.0, 24.0, 10.0, palette.accent);
-    draw_rectangle(cx - 20.0, bottom - 58.0, 40.0, 7.0, Color::new(0.01, 0.015, 0.025, 1.0));
-    draw_rectangle(cx - 22.0, bottom - 29.0, 44.0, 20.0, Color::new(0.02, 0.03, 0.05, 1.0));
+    draw_rectangle(
+        cx - 20.0,
+        bottom - 58.0,
+        40.0,
+        7.0,
+        Color::new(0.01, 0.015, 0.025, 1.0),
+    );
+    draw_rectangle(
+        cx - 22.0,
+        bottom - 29.0,
+        44.0,
+        20.0,
+        Color::new(0.02, 0.03, 0.05, 1.0),
+    );
     draw_rectangle_lines(cx - 22.0, bottom - 29.0, 44.0, 20.0, 1.0, palette.border);
     draw_text("MK-IV", cx - 17.0, bottom - 15.0, 11.0, palette.accent);
-    draw_rectangle_lines(cx - 28.0, bottom - 112.0, 56.0, 112.0, 2.0, Color::new(palette.accent.r, palette.accent.g, palette.accent.b, 0.55));
+    draw_rectangle_lines(
+        cx - 28.0,
+        bottom - 112.0,
+        56.0,
+        112.0,
+        2.0,
+        Color::new(palette.accent.r, palette.accent.g, palette.accent.b, 0.55),
+    );
 }
 
 fn draw_header(game: &GameState, palette: Palette) {
@@ -1345,8 +1537,21 @@ fn draw_header(game: &GameState, palette: Palette) {
     draw_centered("MW", logo, 15.0, Color::new(0.015, 0.025, 0.04, 1.0));
     draw_text("MAZE WARS 3D", 62.0, 31.0, 21.0, WHITE);
     let badge = Rect::new(218.0, 13.0, 174.0, 23.0);
-    draw_rectangle(badge.x, badge.y, badge.w, badge.h, Color::new(0.02, 0.16, 0.19, 0.72));
-    draw_rectangle_lines(badge.x, badge.y, badge.w, badge.h, 1.0, Color::new(0.1, 0.55, 0.62, 0.65));
+    draw_rectangle(
+        badge.x,
+        badge.y,
+        badge.w,
+        badge.h,
+        Color::new(0.02, 0.16, 0.19, 0.72),
+    );
+    draw_rectangle_lines(
+        badge.x,
+        badge.y,
+        badge.w,
+        badge.h,
+        1.0,
+        Color::new(0.1, 0.55, 0.62, 0.65),
+    );
     draw_centered("01-EDU MULTIPLAYER FPS", badge, 10.5, palette.accent);
     draw_text("DDA Raycasting", 62.0, 53.0, 11.0, palette.muted);
     draw_text("|", 153.0, 53.0, 11.0, DARKGRAY);
@@ -1364,16 +1569,30 @@ fn draw_header(game: &GameState, palette: Palette) {
 
     let gateway = gateway_button_rect();
     let gateway_text = format!("GATEWAY {}", server_host(&game.server));
-    draw_dark_button(gateway, shorten(&gateway_text, 20), false);
+    draw_dark_button(gateway, &shorten(&gateway_text, 20), false);
     draw_dark_button(editor_button_rect(), "EDITOR", false);
-    draw_dark_button(score_button_rect(), "SCORE", game.overlay == Overlay::Scoreboard);
-    draw_dark_button(settings_button_rect(), "SET", game.overlay == Overlay::Settings);
+    draw_dark_button(
+        score_button_rect(),
+        "SCORE",
+        game.overlay == Overlay::Scoreboard,
+    );
+    draw_dark_button(
+        settings_button_rect(),
+        "SET",
+        game.overlay == Overlay::Settings,
+    );
 }
 
 fn draw_info_bar(game: &GameState, palette: Palette) {
     let maze = &game.levels[game.level_index];
     draw_text(
-        format!("{}   {}x{} sector   {} dead ends", maze.name, maze.width, maze.height, maze.dead_ends()),
+        format!(
+            "{}   {}x{} sector   {} dead ends",
+            maze.name,
+            maze.width,
+            maze.height,
+            maze.dead_ends()
+        ),
         18.0,
         96.0,
         13.0,
@@ -1385,7 +1604,13 @@ fn draw_info_bar(game: &GameState, palette: Palette) {
         "Click viewport to lock mouse cursor"
     };
     let m = measure_text(helper, None, 12, 1.0);
-    draw_text(helper, screen_width() - m.width - 18.0, 96.0, 12.0, palette.muted);
+    draw_text(
+        helper,
+        screen_width() - m.width - 18.0,
+        96.0,
+        12.0,
+        palette.muted,
+    );
 }
 
 fn draw_feature_cards(palette: Palette) {
@@ -1401,8 +1626,21 @@ fn draw_feature_cards(palette: Palette) {
     ];
     for (index, (title, sub)) in cards.iter().enumerate() {
         let rect = Rect::new(margin + index as f32 * (w + gap), y, w, 62.0);
-        draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.012, 0.02, 0.035, 0.96));
-        draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.0, Color::new(0.1, 0.15, 0.22, 1.0));
+        draw_rectangle(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            Color::new(0.012, 0.02, 0.035, 0.96),
+        );
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            1.0,
+            Color::new(0.1, 0.15, 0.22, 1.0),
+        );
         draw_circle(rect.x + 14.0, rect.y + 18.0, 4.0, palette.health);
         draw_text(*title, rect.x + 25.0, rect.y + 22.0, 11.0, palette.accent);
         draw_text(*sub, rect.x + 14.0, rect.y + 45.0, 10.0, palette.muted);
@@ -1418,7 +1656,13 @@ fn draw_scoreboard(game: &GameState, palette: Palette) {
         500.0,
     );
     draw_shadowed_panel(panel, Color::new(0.018, 0.026, 0.05, 0.99), palette.accent);
-    draw_text("COMBAT LEADERBOARD", panel.x + 28.0, panel.y + 42.0, 24.0, WHITE);
+    draw_text(
+        "COMBAT LEADERBOARD",
+        panel.x + 28.0,
+        panel.y + 42.0,
+        24.0,
+        WHITE,
+    );
     draw_text(
         &game.levels[game.level_index].name,
         panel.x + 28.0,
@@ -1427,9 +1671,23 @@ fn draw_scoreboard(game: &GameState, palette: Palette) {
         palette.muted,
     );
     draw_dark_button(scoreboard_close_rect(), "X", false);
-    draw_line(panel.x + 24.0, panel.y + 82.0, panel.x + panel.w - 24.0, panel.y + 82.0, 1.0, Color::new(0.12, 0.17, 0.24, 1.0));
+    draw_line(
+        panel.x + 24.0,
+        panel.y + 82.0,
+        panel.x + panel.w - 24.0,
+        panel.y + 82.0,
+        1.0,
+        Color::new(0.12, 0.17, 0.24, 1.0),
+    );
 
-    let headers = [("#", 34.0), ("AGENT", 80.0), ("STATUS", 330.0), ("HP", 470.0), ("FRAGS", 555.0), ("PING", 650.0)];
+    let headers = [
+        ("#", 34.0),
+        ("AGENT", 80.0),
+        ("STATUS", 330.0),
+        ("HP", 470.0),
+        ("FRAGS", 555.0),
+        ("PING", 650.0),
+    ];
     for (label, x) in headers {
         draw_text(label, panel.x + x, panel.y + 112.0, 11.0, palette.muted);
     }
@@ -1458,22 +1716,62 @@ fn draw_scoreboard(game: &GameState, palette: Palette) {
     for (index, (_, name, health, score, bot, local)) in rows.iter().take(10).enumerate() {
         let y = panel.y + 132.0 + index as f32 * 31.0;
         if index % 2 == 0 {
-            draw_rectangle(panel.x + 24.0, y - 18.0, panel.w - 48.0, 28.0, Color::new(0.025, 0.04, 0.07, 0.7));
+            draw_rectangle(
+                panel.x + 24.0,
+                y - 18.0,
+                panel.w - 48.0,
+                28.0,
+                Color::new(0.025, 0.04, 0.07, 0.7),
+            );
         }
-        draw_text(format!("{}", index + 1), panel.x + 36.0, y, 13.0, palette.muted);
+        draw_text(
+            format!("{}", index + 1),
+            panel.x + 36.0,
+            y,
+            13.0,
+            palette.muted,
+        );
         draw_text(
             shorten(name, 22),
             panel.x + 80.0,
             y,
             13.0,
-            if *local { palette.accent } else if *bot { palette.danger } else { WHITE },
+            if *local {
+                palette.accent
+            } else if *bot {
+                palette.danger
+            } else {
+                WHITE
+            },
         );
-        let status = if *local { "YOU" } else if *bot { "BOT" } else { "REMOTE" };
-        draw_text(status, panel.x + 330.0, y, 11.0, if *bot { palette.danger } else { palette.muted });
-        draw_text(format!("{}", health.max(&0)), panel.x + 470.0, y, 13.0, LIGHTGRAY);
+        let status = if *local {
+            "YOU"
+        } else if *bot {
+            "BOT"
+        } else {
+            "REMOTE"
+        };
+        draw_text(
+            status,
+            panel.x + 330.0,
+            y,
+            11.0,
+            if *bot { palette.danger } else { palette.muted },
+        );
+        draw_text(
+            format!("{}", health.max(&0)),
+            panel.x + 470.0,
+            y,
+            13.0,
+            LIGHTGRAY,
+        );
         draw_text(format!("{}", score), panel.x + 555.0, y, 13.0, WHITE);
         draw_text(
-            if *local { format!("{} ms", game.ping_ms) } else { "-".to_string() },
+            if *local {
+                format!("{} ms", game.ping_ms)
+            } else {
+                "-".to_string()
+            },
             panel.x + 650.0,
             y,
             12.0,
@@ -1481,20 +1779,56 @@ fn draw_scoreboard(game: &GameState, palette: Palette) {
         );
     }
 
-    draw_text("TAB toggles scoreboard during combat", panel.x + 246.0, panel.y + panel.h - 24.0, 11.0, palette.muted);
+    draw_text(
+        "TAB toggles scoreboard during combat",
+        panel.x + 246.0,
+        panel.y + panel.h - 24.0,
+        11.0,
+        palette.muted,
+    );
 }
 
 fn draw_settings(game: &GameState, palette: Palette) {
     draw_modal_backdrop();
     let panel = settings_panel_rect();
     draw_shadowed_panel(panel, Color::new(0.018, 0.026, 0.05, 0.99), palette.accent);
-    draw_text("SIMULATION & GRAPHICS CONFIGURATION", panel.x + 26.0, panel.y + 38.0, 21.0, WHITE);
-    draw_text("Visual rendering pipeline and input tuning", panel.x + 26.0, panel.y + 60.0, 12.0, palette.muted);
+    draw_text(
+        "SIMULATION & GRAPHICS CONFIGURATION",
+        panel.x + 26.0,
+        panel.y + 38.0,
+        21.0,
+        WHITE,
+    );
+    draw_text(
+        "Visual rendering pipeline and input tuning",
+        panel.x + 26.0,
+        panel.y + 60.0,
+        12.0,
+        palette.muted,
+    );
     draw_dark_button(settings_close_rect(), "X", false);
-    draw_line(panel.x + 22.0, panel.y + 78.0, panel.x + panel.w - 22.0, panel.y + 78.0, 1.0, Color::new(0.12, 0.17, 0.24, 1.0));
+    draw_line(
+        panel.x + 22.0,
+        panel.y + 78.0,
+        panel.x + panel.w - 22.0,
+        panel.y + 78.0,
+        1.0,
+        Color::new(0.12, 0.17, 0.24, 1.0),
+    );
 
-    draw_text("RENDER ARCHITECTURE & AESTHETIC", panel.x + 26.0, panel.y + 104.0, 12.0, LIGHTGRAY);
-    let themes = [VisualTheme::Classic, VisualTheme::Cyberpunk, VisualTheme::Green, VisualTheme::Amber];
+    draw_text(
+        "RENDER ARCHITECTURE & AESTHETIC",
+        panel.x + 26.0,
+        panel.y + 104.0,
+        12.0,
+        LIGHTGRAY,
+    );
+    let themes = [
+        VisualTheme::Classic,
+        VisualTheme::Cyberpunk,
+        VisualTheme::Green,
+        VisualTheme::Amber,
+    ];
     for (index, theme) in themes.iter().enumerate() {
         let rect = theme_rect(index);
         let active = game.settings.theme == *theme;
@@ -1503,10 +1837,31 @@ fn draw_settings(game: &GameState, palette: Palette) {
             rect.y,
             rect.w,
             rect.h,
-            if active { Color::new(0.02, 0.17, 0.20, 0.82) } else { Color::new(0.025, 0.04, 0.07, 0.8) },
+            if active {
+                Color::new(0.02, 0.17, 0.20, 0.82)
+            } else {
+                Color::new(0.025, 0.04, 0.07, 0.8)
+            },
         );
-        draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, if active { 2.0 } else { 1.0 }, if active { palette.accent } else { Color::new(0.12, 0.17, 0.24, 1.0) });
-        draw_text(theme.label(), rect.x + 12.0, rect.y + 25.0, 14.0, if active { palette.accent } else { LIGHTGRAY });
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            if active { 2.0 } else { 1.0 },
+            if active {
+                palette.accent
+            } else {
+                Color::new(0.12, 0.17, 0.24, 1.0)
+            },
+        );
+        draw_text(
+            theme.label(),
+            rect.x + 12.0,
+            rect.y + 25.0,
+            14.0,
+            if active { palette.accent } else { LIGHTGRAY },
+        );
         let desc = match theme {
             VisualTheme::Classic => "High-contrast Maze Wars",
             VisualTheme::Cyberpunk => "Neon cyan / magenta",
@@ -1516,13 +1871,44 @@ fn draw_settings(game: &GameState, palette: Palette) {
         draw_text(desc, rect.x + 12.0, rect.y + 46.0, 11.0, palette.muted);
     }
 
-    draw_text("DISPLAY OPTIONS", panel.x + 26.0, panel.y + 278.0, 12.0, LIGHTGRAY);
-    draw_toggle(toggle_rect(0), "CRT SCANLINES", game.settings.crt_effect, palette);
-    draw_toggle(toggle_rect(1), "TACTICAL MINIMAP", game.settings.show_minimap, palette);
-    draw_toggle(toggle_rect(2), "MINIMAP FOV RAYS", game.settings.show_rays, palette);
+    draw_text(
+        "DISPLAY OPTIONS",
+        panel.x + 26.0,
+        panel.y + 278.0,
+        12.0,
+        LIGHTGRAY,
+    );
+    draw_toggle(
+        toggle_rect(0),
+        "CRT SCANLINES",
+        game.settings.crt_effect,
+        palette,
+    );
+    draw_toggle(
+        toggle_rect(1),
+        "TACTICAL MINIMAP",
+        game.settings.show_minimap,
+        palette,
+    );
+    draw_toggle(
+        toggle_rect(2),
+        "MINIMAP FOV RAYS",
+        game.settings.show_rays,
+        palette,
+    );
 
-    draw_text("MOUSE SENSITIVITY", panel.x + 26.0, panel.y + 370.0, 12.0, LIGHTGRAY);
-    draw_slider(sensitivity_rect(), (game.settings.mouse_sensitivity - 0.25) / 1.75, palette);
+    draw_text(
+        "MOUSE SENSITIVITY",
+        panel.x + 26.0,
+        panel.y + 370.0,
+        12.0,
+        LIGHTGRAY,
+    );
+    draw_slider(
+        sensitivity_rect(),
+        (game.settings.mouse_sensitivity - 0.25) / 1.75,
+        palette,
+    );
     draw_text(
         format!("{:.2}x", game.settings.mouse_sensitivity),
         panel.x + panel.w - 82.0,
@@ -1531,7 +1917,13 @@ fn draw_settings(game: &GameState, palette: Palette) {
         palette.accent,
     );
 
-    draw_text("FIELD OF VIEW", panel.x + 26.0, panel.y + 426.0, 12.0, LIGHTGRAY);
+    draw_text(
+        "FIELD OF VIEW",
+        panel.x + 26.0,
+        panel.y + 426.0,
+        12.0,
+        LIGHTGRAY,
+    );
     draw_slider(fov_rect(), (game.settings.fov - 0.75) / 0.75, palette);
     draw_text(
         format!("{:.0} deg", game.settings.fov * 180.0 / PI),
@@ -1552,7 +1944,12 @@ fn handle_settings_input(game: &mut GameState) {
             game.overlay = Overlay::None;
             return;
         }
-        let themes = [VisualTheme::Classic, VisualTheme::Cyberpunk, VisualTheme::Green, VisualTheme::Amber];
+        let themes = [
+            VisualTheme::Classic,
+            VisualTheme::Cyberpunk,
+            VisualTheme::Green,
+            VisualTheme::Amber,
+        ];
         for (index, theme) in themes.iter().enumerate() {
             if point_in_rect(mouse_position(), theme_rect(index)) {
                 game.settings.theme = *theme;
@@ -1576,12 +1973,23 @@ fn handle_settings_input(game: &mut GameState) {
     if is_mouse_button_down(MouseButton::Left) {
         let mouse = mouse_position();
         let sensitivity = sensitivity_rect();
-        if point_in_rect(mouse, Rect::new(sensitivity.x - 10.0, sensitivity.y - 12.0, sensitivity.w + 20.0, 32.0)) {
+        if point_in_rect(
+            mouse,
+            Rect::new(
+                sensitivity.x - 10.0,
+                sensitivity.y - 12.0,
+                sensitivity.w + 20.0,
+                32.0,
+            ),
+        ) {
             let t = ((mouse.0 - sensitivity.x) / sensitivity.w).clamp(0.0, 1.0);
             game.settings.mouse_sensitivity = 0.25 + t * 1.75;
         }
         let fov = fov_rect();
-        if point_in_rect(mouse, Rect::new(fov.x - 10.0, fov.y - 12.0, fov.w + 20.0, 32.0)) {
+        if point_in_rect(
+            mouse,
+            Rect::new(fov.x - 10.0, fov.y - 12.0, fov.w + 20.0, 32.0),
+        ) {
             let t = ((mouse.0 - fov.x) / fov.w).clamp(0.0, 1.0);
             game.settings.fov = 0.75 + t * 0.75;
         }
@@ -1607,7 +2015,9 @@ fn name_for_id(game: &GameState, id: u32) -> Option<String> {
     if id == game.network.player_id {
         return Some(game.username.clone());
     }
-    game.remotes.get(&id).map(|visual| visual.state.name.clone())
+    game.remotes
+        .get(&id)
+        .map(|visual| visual.state.name.clone())
 }
 
 fn fire_weapon(game: &mut GameState) {
@@ -1739,7 +2149,12 @@ fn settings_button_rect() -> Rect {
 }
 
 fn game_view_rect() -> Rect {
-    Rect::new(16.0, 108.0, screen_width() - 32.0, (screen_height() - 204.0).max(360.0))
+    Rect::new(
+        16.0,
+        108.0,
+        screen_width() - 32.0,
+        (screen_height() - 204.0).max(360.0),
+    )
 }
 
 fn settings_panel_rect() -> Rect {
@@ -1758,7 +2173,12 @@ fn settings_close_rect() -> Rect {
 
 fn settings_apply_rect() -> Rect {
     let panel = settings_panel_rect();
-    Rect::new(panel.x + panel.w - 188.0, panel.y + panel.h - 55.0, 162.0, 34.0)
+    Rect::new(
+        panel.x + panel.w - 188.0,
+        panel.y + panel.h - 55.0,
+        162.0,
+        34.0,
+    )
 }
 
 fn scoreboard_close_rect() -> Rect {
@@ -1784,7 +2204,12 @@ fn theme_rect(index: usize) -> Rect {
 
 fn toggle_rect(index: usize) -> Rect {
     let panel = settings_panel_rect();
-    Rect::new(panel.x + 26.0 + index as f32 * 180.0, panel.y + 294.0, 166.0, 48.0)
+    Rect::new(
+        panel.x + 26.0 + index as f32 * 180.0,
+        panel.y + 294.0,
+        166.0,
+        48.0,
+    )
 }
 
 fn sensitivity_rect() -> Rect {
@@ -1798,13 +2223,40 @@ fn fov_rect() -> Rect {
 }
 
 fn draw_toggle(rect: Rect, label: &str, active: bool, palette: Palette) {
-    draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.025, 0.04, 0.07, 0.85));
-    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.0, if active { palette.accent } else { Color::new(0.12, 0.17, 0.24, 1.0) });
+    draw_rectangle(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        Color::new(0.025, 0.04, 0.07, 0.85),
+    );
+    draw_rectangle_lines(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        1.0,
+        if active {
+            palette.accent
+        } else {
+            Color::new(0.12, 0.17, 0.24, 1.0)
+        },
+    );
     draw_text(label, rect.x + 10.0, rect.y + 20.0, 11.0, LIGHTGRAY);
     let switch = Rect::new(rect.x + rect.w - 46.0, rect.y + 13.0, 34.0, 18.0);
-    draw_rectangle(switch.x, switch.y, switch.w, switch.h, if active { palette.accent } else { DARKGRAY });
+    draw_rectangle(
+        switch.x,
+        switch.y,
+        switch.w,
+        switch.h,
+        if active { palette.accent } else { DARKGRAY },
+    );
     draw_circle(
-        if active { switch.x + switch.w - 9.0 } else { switch.x + 9.0 },
+        if active {
+            switch.x + switch.w - 9.0
+        } else {
+            switch.x + 9.0
+        },
         switch.y + 9.0,
         6.0,
         WHITE,
@@ -1813,7 +2265,13 @@ fn draw_toggle(rect: Rect, label: &str, active: bool, palette: Palette) {
 
 fn draw_slider(rect: Rect, value: f32, palette: Palette) {
     let value = value.clamp(0.0, 1.0);
-    draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.08, 0.11, 0.16, 1.0));
+    draw_rectangle(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        Color::new(0.08, 0.11, 0.16, 1.0),
+    );
     draw_rectangle(rect.x, rect.y, rect.w * value, rect.h, palette.accent);
     draw_circle(rect.x + rect.w * value, rect.y + rect.h * 0.5, 7.0, WHITE);
 }
@@ -1821,19 +2279,51 @@ fn draw_slider(rect: Rect, value: f32, palette: Palette) {
 fn draw_crt(view: Rect) {
     let mut y = view.y + 2.0;
     while y < view.y + view.h {
-        draw_line(view.x, y, view.x + view.w, y, 1.0, Color::new(0.0, 0.0, 0.0, 0.16));
+        draw_line(
+            view.x,
+            y,
+            view.x + view.w,
+            y,
+            1.0,
+            Color::new(0.0, 0.0, 0.0, 0.16),
+        );
         y += 6.0;
     }
 }
 
 fn draw_bar(rect: Rect, ratio: f32, color: Color) {
-    draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.08, 0.1, 0.14, 1.0));
-    draw_rectangle(rect.x, rect.y, rect.w * ratio.clamp(0.0, 1.0), rect.h, color);
+    draw_rectangle(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        Color::new(0.08, 0.1, 0.14, 1.0),
+    );
+    draw_rectangle(
+        rect.x,
+        rect.y,
+        rect.w * ratio.clamp(0.0, 1.0),
+        rect.h,
+        color,
+    );
 }
 
 fn draw_hud_panel(rect: Rect, palette: Palette) {
-    draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(palette.panel.r, palette.panel.g, palette.panel.b, 0.82));
-    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.0, Color::new(palette.border.r, palette.border.g, palette.border.b, 0.8));
+    draw_rectangle(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        Color::new(palette.panel.r, palette.panel.g, palette.panel.b, 0.82),
+    );
+    draw_rectangle_lines(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        1.0,
+        Color::new(palette.border.r, palette.border.g, palette.border.b, 0.8),
+    );
 }
 
 fn draw_crosshair(x: f32, y: f32, color: Color) {
@@ -1844,28 +2334,87 @@ fn draw_crosshair(x: f32, y: f32, color: Color) {
 }
 
 fn draw_modal_backdrop() {
-    draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.82));
+    draw_rectangle(
+        0.0,
+        0.0,
+        screen_width(),
+        screen_height(),
+        Color::new(0.0, 0.0, 0.0, 0.82),
+    );
 }
 
 fn draw_shadowed_panel(rect: Rect, fill: Color, border: Color) {
-    draw_rectangle(rect.x + 8.0, rect.y + 10.0, rect.w, rect.h, Color::new(0.0, 0.0, 0.0, 0.34));
+    draw_rectangle(
+        rect.x + 8.0,
+        rect.y + 10.0,
+        rect.w,
+        rect.h,
+        Color::new(0.0, 0.0, 0.0, 0.34),
+    );
     draw_rectangle(rect.x, rect.y, rect.w, rect.h, fill);
-    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.0, Color::new(border.r, border.g, border.b, 0.48));
+    draw_rectangle_lines(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        1.0,
+        Color::new(border.r, border.g, border.b, 0.48),
+    );
 }
 
 fn draw_status_card(rect: Rect, title: &str, subtitle: &str, accent: Color) {
-    draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.03, 0.05, 0.085, 1.0));
-    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.0, Color::new(accent.r, accent.g, accent.b, 0.5));
+    draw_rectangle(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        Color::new(0.03, 0.05, 0.085, 1.0),
+    );
+    draw_rectangle_lines(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        1.0,
+        Color::new(accent.r, accent.g, accent.b, 0.5),
+    );
     draw_circle(rect.x + 16.0, rect.y + 19.0, 4.0, accent);
     draw_text(title, rect.x + 28.0, rect.y + 23.0, 13.0, accent);
     draw_text(subtitle, rect.x + 14.0, rect.y + 51.0, 11.0, GRAY);
 }
 
 fn draw_field(label: &str, value: &str, rect: Rect, active: bool) {
-    draw_text(label, rect.x, rect.y - 8.0, 13.0, if active { SKYBLUE } else { GRAY });
-    draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.015, 0.025, 0.045, 1.0));
-    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, if active { 2.0 } else { 1.0 }, if active { SKYBLUE } else { Color::new(0.12, 0.17, 0.24, 1.0) });
-    let cursor = if active && ((get_time() * 2.0) as i32 % 2 == 0) { "_" } else { "" };
+    draw_text(
+        label,
+        rect.x,
+        rect.y - 8.0,
+        13.0,
+        if active { SKYBLUE } else { GRAY },
+    );
+    draw_rectangle(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        Color::new(0.015, 0.025, 0.045, 1.0),
+    );
+    draw_rectangle_lines(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        if active { 2.0 } else { 1.0 },
+        if active {
+            SKYBLUE
+        } else {
+            Color::new(0.12, 0.17, 0.24, 1.0)
+        },
+    );
+    let cursor = if active && ((get_time() * 2.0) as i32 % 2 == 0) {
+        "_"
+    } else {
+        ""
+    };
     draw_text(
         format!("{value}{cursor}"),
         rect.x + 12.0,
@@ -1878,12 +2427,23 @@ fn draw_field(label: &str, value: &str, rect: Rect, active: bool) {
 fn draw_gradient_like_button(rect: Rect, label: &str, accent: Color) -> bool {
     let hover = point_in_rect(mouse_position(), rect);
     let fill = if hover {
-        Color::new((accent.r + 0.12).min(1.0), (accent.g + 0.06).min(1.0), (accent.b + 0.02).min(1.0), 1.0)
+        Color::new(
+            (accent.r + 0.12).min(1.0),
+            (accent.g + 0.06).min(1.0),
+            (accent.b + 0.02).min(1.0),
+            1.0,
+        )
     } else {
         accent
     };
     draw_rectangle(rect.x, rect.y, rect.w, rect.h, fill);
-    draw_rectangle(rect.x + rect.w * 0.65, rect.y, rect.w * 0.35, rect.h, Color::new(0.18, 0.34, 0.78, 0.35));
+    draw_rectangle(
+        rect.x + rect.w * 0.65,
+        rect.y,
+        rect.w * 0.35,
+        rect.h,
+        Color::new(0.18, 0.34, 0.78, 0.35),
+    );
     draw_centered(label, rect, 14.0, Color::new(0.01, 0.02, 0.04, 1.0));
     hover && is_mouse_button_pressed(MouseButton::Left)
 }
@@ -1909,7 +2469,11 @@ fn draw_dark_button(rect: Rect, label: &str, active: bool) -> bool {
         rect.w,
         rect.h,
         1.0,
-        if active { SKYBLUE } else { Color::new(0.12, 0.17, 0.24, 1.0) },
+        if active {
+            SKYBLUE
+        } else {
+            Color::new(0.12, 0.17, 0.24, 1.0)
+        },
     );
     draw_centered(label, rect, 11.0, if active { SKYBLUE } else { LIGHTGRAY });
     hover && is_mouse_button_pressed(MouseButton::Left)

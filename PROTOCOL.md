@@ -12,6 +12,7 @@ INPUT|<sequence>|<forward>|<strafe>|<turn>
 SHOOT|<sequence>
 PING
 NEXT
+SETLEVEL|<level_index>
 LEAVE
 ```
 

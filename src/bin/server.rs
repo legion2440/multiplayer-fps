@@ -134,7 +134,7 @@ fn main() -> io::Result<()> {
         );
         process_shots(&socket, &mut players, &levels[level_index]);
 
-        if tick.is_multiple_of(SNAPSHOT_EVERY_TICKS) {
+        if tick % SNAPSHOT_EVERY_TICKS == 0 {
             broadcast_state(&socket, &players, tick, level_index);
         }
     }
@@ -241,6 +241,23 @@ fn receive_packets(
                 if address_to_id.contains_key(&source) && Instant::now() >= *level_change_allowed_at
                 {
                     *level_index = (*level_index + 1) % levels.len();
+                    reset_for_level(players, &levels[*level_index]);
+                    *level_change_allowed_at = Instant::now() + Duration::from_secs(2);
+                    broadcast_raw(socket, players, &level_packet(*level_index));
+                    println!(
+                        "[level] {} - {} ({} dead ends)",
+                        *level_index + 1,
+                        levels[*level_index].name,
+                        levels[*level_index].dead_ends()
+                    );
+                }
+            }
+            ClientMessage::SetLevel(requested) => {
+                if address_to_id.contains_key(&source)
+                    && requested < levels.len()
+                    && Instant::now() >= *level_change_allowed_at
+                {
+                    *level_index = requested;
                     reset_for_level(players, &levels[*level_index]);
                     *level_change_allowed_at = Instant::now() + Duration::from_secs(2);
                     broadcast_raw(socket, players, &level_packet(*level_index));

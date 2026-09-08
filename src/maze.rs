@@ -438,7 +438,7 @@ pub fn normalize_angle(mut angle: f32) -> f32 {
 
 fn normalize_size(size: usize) -> usize {
     let size = size.max(7);
-    if size.is_multiple_of(2) {
+    if size % 2 == 0 {
         size + 1
     } else {
         size
