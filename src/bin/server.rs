@@ -215,12 +215,12 @@ fn receive_packets(
                 forward,
                 strafe,
                 turn,
-                look_delta,
+                angle,
             } => {
                 if let Some(player) = player_for_source_mut(players, address_to_id, source) {
                     player.last_seen = Instant::now();
-                    if look_delta.is_finite() {
-                        player.angle = normalize_angle(player.angle + look_delta);
+                    if angle.is_finite() {
+                        player.angle = normalize_angle(angle);
                     }
                     player.input = InputState {
                         forward,

@@ -167,7 +167,7 @@ struct GameState {
     cursor_grabbed: bool,
     settings: GameSettings,
     overlay: Overlay,
-    pending_mouse_look: f32,
+    level_resync_sent: Option<Instant>,
     last_health: i32,
     last_hit_by: HashMap<u32, u32>,
     kill_feed: Vec<KillFeedEntry>,
@@ -527,7 +527,7 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
                 cursor_grabbed: false,
                 settings: GameSettings::default(),
                 overlay: Overlay::None,
-                pending_mouse_look: 0.0,
+                level_resync_sent: None,
                 last_health: 100,
                 last_hit_by: HashMap::new(),
                 kill_feed: Vec::new(),
@@ -645,7 +645,6 @@ fn update_game(mut game: GameState) -> AppScreen {
                 -mouse_pixels_x * MOUSE_RADIANS_PER_PIXEL * game.settings.mouse_sensitivity;
             if look_delta.is_finite() {
                 game.angle = normalize_angle(game.angle + look_delta);
-                game.pending_mouse_look += look_delta;
             }
         }
 
@@ -672,10 +671,9 @@ fn update_game(mut game: GameState) -> AppScreen {
             forward,
             strafe,
             turn,
-            look_delta: game.pending_mouse_look,
+            angle: game.angle,
         });
         if game.network.socket.send(packet.as_bytes()).is_ok() {
-            game.pending_mouse_look = 0.0;
             game.network.last_input_sent = Instant::now();
         }
     }
@@ -712,9 +710,14 @@ fn update_game(mut game: GameState) -> AppScreen {
                     continue;
                 }
                 game.last_server_tick = tick;
-                if level < game.levels.len() && level != game.level_index {
-                    game.level_index = level;
-                    game.remotes.clear();
+                if level < game.levels.len() {
+                    game.level_resync_sent = None;
+                    if level != game.level_index {
+                        game.level_index = level;
+                        game.remotes.clear();
+                    }
+                } else {
+                    request_level_resync(&mut game);
                 }
 
                 let mut seen = Vec::with_capacity(players.len());
@@ -783,9 +786,12 @@ fn update_game(mut game: GameState) -> AppScreen {
             }
             ServerMessage::Level(level) => {
                 if level < game.levels.len() {
+                    game.level_resync_sent = None;
                     game.level_index = level;
                     game.remotes.clear();
                     game.status = format!("Level changed to {}", level + 1);
+                } else {
+                    request_level_resync(&mut game);
                 }
             }
             ServerMessage::CustomLevel(maze) => {
@@ -797,6 +803,7 @@ fn update_game(mut game: GameState) -> AppScreen {
                 }
                 if game.levels.len() > CUSTOM_INDEX {
                     game.level_index = CUSTOM_INDEX;
+                    game.level_resync_sent = None;
                     game.remotes.clear();
                     game.status = "Custom level activated.".to_string();
                 }
@@ -1288,7 +1295,7 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
         LIGHTGRAY,
     );
 
-    let hull = Rect::new(view.x + 16.0, view.y + view.h - 104.0, 245.0, 80.0);
+    let hull = Rect::new(view.x + 16.0, view.y + view.h - 76.0, 245.0, 52.0);
     draw_hud_panel(hull, palette);
     draw_text("HULL", hull.x + 12.0, hull.y + 20.0, 12.0, palette.muted);
     draw_text(
@@ -1299,22 +1306,9 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
         WHITE,
     );
     draw_bar(
-        Rect::new(hull.x + 12.0, hull.y + 27.0, hull.w - 24.0, 8.0),
+        Rect::new(hull.x + 12.0, hull.y + 31.0, hull.w - 24.0, 8.0),
         game.health.max(0) as f32 / 100.0,
         palette.health,
-    );
-    draw_text("WEAPON", hull.x + 12.0, hull.y + 54.0, 12.0, palette.muted);
-    draw_text(
-        "READY",
-        hull.x + hull.w - 58.0,
-        hull.y + 54.0,
-        12.0,
-        palette.accent,
-    );
-    draw_bar(
-        Rect::new(hull.x + 12.0, hull.y + 61.0, hull.w - 24.0, 8.0),
-        1.0,
-        palette.accent,
     );
 
     let score = Rect::new(view.x + view.w - 172.0, view.y + view.h - 94.0, 156.0, 70.0);
@@ -2050,6 +2044,25 @@ fn request_custom_level(game: &mut GameState, maze: Maze, status: &str) {
     }
 }
 
+fn request_level_resync(game: &mut GameState) {
+    if game
+        .level_resync_sent
+        .map(|sent| sent.elapsed() < Duration::from_millis(500))
+        .unwrap_or(false)
+    {
+        return;
+    }
+
+    let packet = encode_client(&ClientMessage::Join(game.username.clone()));
+    match game.network.socket.send(packet.as_bytes()) {
+        Ok(_) => {
+            game.level_resync_sent = Some(Instant::now());
+            game.status = "Recovering missing level data...".to_string();
+        }
+        Err(error) => game.status = format!("Level recovery failed: {error}"),
+    }
+}
+
 fn load_custom_level_file() -> io::Result<Maze> {
     let json = fs::read_to_string(CUSTOM_LEVEL_FILE)?;
     let maze = serde_json::from_str::<Maze>(&json).map_err(io::Error::other)?;
@@ -2058,10 +2071,11 @@ fn load_custom_level_file() -> io::Result<Maze> {
         || !(7..=31).contains(&maze.height)
         || maze.width % 2 == 0
         || maze.height % 2 == 0
+        || !maze.is_connected()
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "invalid maze dimensions",
+            "invalid or disconnected maze",
         ));
     }
     Ok(maze)

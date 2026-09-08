@@ -162,6 +162,50 @@ impl Maze {
         self.cells[idx] = if self.cells[idx] == 0 { 1 } else { 0 };
     }
 
+    pub fn is_connected(&self) -> bool {
+        let Some(expected) = self.width.checked_mul(self.height) else {
+            return false;
+        };
+        if self.width == 0 || self.height == 0 || self.cells.len() != expected {
+            return false;
+        }
+
+        let Some(start) = self.cells.iter().position(|cell| *cell == 0) else {
+            return false;
+        };
+        let open_total = self.cells.iter().filter(|cell| **cell == 0).count();
+        let mut seen = vec![false; expected];
+        let mut stack = vec![start];
+        seen[start] = true;
+        let mut reached = 0usize;
+
+        while let Some(index) = stack.pop() {
+            reached += 1;
+            let x = index % self.width;
+            let y = index / self.width;
+            let mut visit = |next: usize| {
+                if !seen[next] && self.cells[next] == 0 {
+                    seen[next] = true;
+                    stack.push(next);
+                }
+            };
+            if x > 0 {
+                visit(index - 1);
+            }
+            if x + 1 < self.width {
+                visit(index + 1);
+            }
+            if y > 0 {
+                visit(index - self.width);
+            }
+            if y + 1 < self.height {
+                visit(index + self.width);
+            }
+        }
+
+        reached == open_total
+    }
+
     pub fn dead_ends(&self) -> usize {
         let mut count = 0usize;
         for y in 1..self.height - 1 {
