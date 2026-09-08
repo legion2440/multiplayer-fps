@@ -26,7 +26,7 @@ const HOSTS_FILE: &str = "hosts.json";
 const CUSTOM_LEVEL_FILE: &str = "custom_level.json";
 const INPUT_SEND_INTERVAL: Duration = Duration::from_millis(33);
 const PING_INTERVAL: Duration = Duration::from_secs(1);
-const MAX_AMMO: i32 = 24;
+const MOUSE_RADIANS_PER_PIXEL: f32 = 0.0025;
 
 fn window_conf() -> Conf {
     Conf {
@@ -117,6 +117,7 @@ struct ConnectScreen {
 struct PendingConnection {
     network: NetworkClient,
     started: Instant,
+    custom_level: Option<Maze>,
 }
 
 #[derive(Debug)]
@@ -166,8 +167,7 @@ struct GameState {
     cursor_grabbed: bool,
     settings: GameSettings,
     overlay: Overlay,
-    ammo: i32,
-    reload_timer: f32,
+    pending_mouse_look: f32,
     last_health: i32,
     last_hit_by: HashMap<u32, u32>,
     kill_feed: Vec<KillFeedEntry>,
@@ -464,6 +464,7 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
                 screen.pending = Some(PendingConnection {
                     network,
                     started: Instant::now(),
+                    custom_level: None,
                 });
                 screen.status = "Waiting for UDP handshake...".to_string();
             }
@@ -477,6 +478,7 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
         for message in poll_network(&pending.network.socket) {
             match message {
                 ServerMessage::Welcome { id, level, x, y } => joined = Some((id, level, x, y)),
+                ServerMessage::CustomLevel(maze) => pending.custom_level = Some(maze),
                 ServerMessage::Reject(reason) => rejected = Some(reason),
                 _ => {}
             }
@@ -493,12 +495,21 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
                 &screen.username,
             );
             save_hosts(&screen.hosts);
+            let mut levels = builtin_levels();
+            if let Some(custom) = pending.custom_level.take() {
+                levels.push(custom);
+            }
+            let initial_level = if level < levels.len() {
+                level
+            } else {
+                level.min(2)
+            };
             return AppScreen::Game(GameState {
                 server: normalized_server(&screen.server),
                 username: screen.username.clone(),
                 network: pending.network,
-                levels: builtin_levels(),
-                level_index: level.min(2),
+                levels,
+                level_index: initial_level,
                 x,
                 y,
                 angle: 0.0,
@@ -516,8 +527,7 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
                 cursor_grabbed: false,
                 settings: GameSettings::default(),
                 overlay: Overlay::None,
-                ammo: MAX_AMMO,
-                reload_timer: 0.0,
+                pending_mouse_look: 0.0,
                 last_health: 100,
                 last_hit_by: HashMap::new(),
                 kill_feed: Vec::new(),
@@ -547,13 +557,6 @@ fn update_game(mut game: GameState) -> AppScreen {
     game.damage_flash = (game.damage_flash - dt).max(0.0);
     game.kill_feed
         .retain(|entry| Instant::now() < entry.expires_at);
-
-    if game.reload_timer > 0.0 {
-        game.reload_timer = (game.reload_timer - dt).max(0.0);
-        if game.reload_timer == 0.0 {
-            game.ammo = MAX_AMMO;
-        }
-    }
 
     if is_key_pressed(KeyCode::Tab) {
         game.overlay = if game.overlay == Overlay::Scoreboard {
@@ -593,26 +596,24 @@ fn update_game(mut game: GameState) -> AppScreen {
                         .send(encode_client(&ClientMessage::SetLevel(level)).as_bytes());
                 }
                 TopAction::Procedural => {
-                    disconnect(&game);
-                    return AppScreen::Editor(EditorState {
-                        maze: Maze::generated("Procedural Maze", "Generated", 21, 21, time_seed()),
-                        status: "Generated procedural maze. G regenerates, S saves.".to_string(),
-                        generation_size: 21,
-                    });
+                    let maze = Maze::generated("Procedural Maze", "Generated", 21, 21, time_seed());
+                    request_custom_level(&mut game, maze, "Procedural level requested.");
                 }
                 TopAction::Gateway => {
-                    disconnect(&game);
-                    return connect_after_game(&game, "Returned to gateway.");
+                    game.status =
+                        "Gateway disabled during a live match. Press Esc twice to disconnect."
+                            .to_string();
                 }
-                TopAction::Editor => {
-                    disconnect(&game);
-                    return AppScreen::Editor(EditorState {
-                        maze: Maze::generated("Editor Maze", "Custom", 21, 21, time_seed()),
-                        status: "Left click toggles walls. G generates, S saves, L loads."
-                            .to_string(),
-                        generation_size: 21,
-                    });
-                }
+                TopAction::Editor => match load_custom_level_file() {
+                    Ok(maze) => {
+                        request_custom_level(&mut game, maze, "Saved custom level requested.");
+                    }
+                    Err(error) => {
+                        game.status = format!(
+                            "Custom level unavailable: {error}. Edit and save it from the gateway."
+                        );
+                    }
+                },
                 TopAction::Scoreboard => {
                     game.overlay = Overlay::Scoreboard;
                 }
@@ -631,15 +632,22 @@ fn update_game(mut game: GameState) -> AppScreen {
     let mut forward = 0.0;
     let mut strafe = 0.0;
     let mut turn = 0.0;
+    let mut wants_fire = false;
     if controls_enabled {
         forward = axis(KeyCode::W, KeyCode::S);
         strafe = axis(KeyCode::D, KeyCode::A);
-        turn = axis(KeyCode::Right, KeyCode::Left) + axis(KeyCode::E, KeyCode::Q);
+        turn =
+            (axis(KeyCode::Right, KeyCode::Left) + axis(KeyCode::E, KeyCode::Q)).clamp(-1.0, 1.0);
         if game.cursor_grabbed {
             let mouse = mouse_delta_position();
-            turn += (-mouse.x * 120.0 * game.settings.mouse_sensitivity).clamp(-1.0, 1.0);
+            let mouse_pixels_x = mouse.x * screen_width() * 0.5;
+            let look_delta =
+                -mouse_pixels_x * MOUSE_RADIANS_PER_PIXEL * game.settings.mouse_sensitivity;
+            if look_delta.is_finite() {
+                game.angle = normalize_angle(game.angle + look_delta);
+                game.pending_mouse_look += look_delta;
+            }
         }
-        turn = turn.clamp(-1.0, 1.0);
 
         let maze = &game.levels[game.level_index];
         move_entity(
@@ -653,26 +661,27 @@ fn update_game(mut game: GameState) -> AppScreen {
             dt,
         );
 
-        if is_key_pressed(KeyCode::R) && game.ammo < MAX_AMMO && game.reload_timer == 0.0 {
-            game.reload_timer = 1.0;
-        }
-
         let mouse_fire = game.cursor_grabbed && is_mouse_button_pressed(MouseButton::Left);
-        if is_key_pressed(KeyCode::Space) || mouse_fire {
-            fire_weapon(&mut game);
-        }
+        wants_fire = is_key_pressed(KeyCode::Space) || mouse_fire;
     }
 
-    if game.network.last_input_sent.elapsed() >= INPUT_SEND_INTERVAL {
+    if game.network.last_input_sent.elapsed() >= INPUT_SEND_INTERVAL || wants_fire {
         game.network.seq = game.network.seq.wrapping_add(1);
         let packet = encode_client(&ClientMessage::Input {
             seq: game.network.seq,
             forward,
             strafe,
             turn,
+            look_delta: game.pending_mouse_look,
         });
-        let _ = game.network.socket.send(packet.as_bytes());
-        game.network.last_input_sent = Instant::now();
+        if game.network.socket.send(packet.as_bytes()).is_ok() {
+            game.pending_mouse_look = 0.0;
+            game.network.last_input_sent = Instant::now();
+        }
+    }
+
+    if wants_fire {
+        fire_weapon(&mut game);
     }
 
     if is_key_pressed(KeyCode::N) && controls_enabled {
@@ -777,6 +786,19 @@ fn update_game(mut game: GameState) -> AppScreen {
                     game.level_index = level;
                     game.remotes.clear();
                     game.status = format!("Level changed to {}", level + 1);
+                }
+            }
+            ServerMessage::CustomLevel(maze) => {
+                const CUSTOM_INDEX: usize = 3;
+                if game.levels.len() == CUSTOM_INDEX {
+                    game.levels.push(maze);
+                } else if game.levels.len() > CUSTOM_INDEX {
+                    game.levels[CUSTOM_INDEX] = maze;
+                }
+                if game.levels.len() > CUSTOM_INDEX {
+                    game.level_index = CUSTOM_INDEX;
+                    game.remotes.clear();
+                    game.status = "Custom level activated.".to_string();
                 }
             }
             ServerMessage::Pong => {
@@ -1281,27 +1303,17 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
         game.health.max(0) as f32 / 100.0,
         palette.health,
     );
-    draw_text("CHARGE", hull.x + 12.0, hull.y + 54.0, 12.0, palette.muted);
-    let ammo_text = if game.reload_timer > 0.0 {
-        "RELOADING".to_string()
-    } else {
-        format!("{}/{}", game.ammo, MAX_AMMO)
-    };
+    draw_text("WEAPON", hull.x + 12.0, hull.y + 54.0, 12.0, palette.muted);
     draw_text(
-        ammo_text,
-        hull.x + hull.w - 78.0,
+        "READY",
+        hull.x + hull.w - 58.0,
         hull.y + 54.0,
         12.0,
         palette.accent,
     );
-    let ammo_ratio = if game.reload_timer > 0.0 {
-        1.0 - game.reload_timer.clamp(0.0, 1.0)
-    } else {
-        game.ammo as f32 / MAX_AMMO as f32
-    };
     draw_bar(
         Rect::new(hull.x + 12.0, hull.y + 61.0, hull.w - 24.0, 8.0),
-        ammo_ratio,
+        1.0,
         palette.accent,
     );
 
@@ -1323,8 +1335,7 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
     );
     draw_text("FRAGS", score.x + 72.0, score.y + 45.0, 11.0, palette.muted);
 
-    let helper =
-        "WASD Move   Mouse / arrows Turn   Space / Click Fire   R Reload   TAB Leaderboard";
+    let helper = "WASD Move   Mouse / arrows Turn   Space / Click Fire   TAB Leaderboard";
     let hm = measure_text(helper, None, 11, 1.0);
     let helper_rect = Rect::new(
         view.x + view.w * 0.5 - hm.width * 0.5 - 14.0,
@@ -1380,8 +1391,9 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
     }
 
     let level_note = format!(
-        "L{} / 3   {} dead ends",
+        "L{} / {}   {} dead ends",
         game.level_index + 1,
+        game.levels.len(),
         maze.dead_ends()
     );
     draw_text(
@@ -1570,7 +1582,7 @@ fn draw_header(game: &GameState, palette: Palette) {
     let gateway = gateway_button_rect();
     let gateway_text = format!("GATEWAY {}", server_host(&game.server));
     draw_dark_button(gateway, &shorten(&gateway_text, 20), false);
-    draw_dark_button(editor_button_rect(), "EDITOR", false);
+    draw_dark_button(editor_button_rect(), "CUSTOM", game.level_index == 3);
     draw_dark_button(
         score_button_rect(),
         "SCORE",
@@ -2021,21 +2033,38 @@ fn name_for_id(game: &GameState, id: u32) -> Option<String> {
 }
 
 fn fire_weapon(game: &mut GameState) {
-    if game.health <= 0 || game.reload_timer > 0.0 {
-        return;
-    }
-    if game.ammo <= 0 {
-        game.reload_timer = 1.0;
+    if game.health <= 0 {
         return;
     }
     game.network.seq = game.network.seq.wrapping_add(1);
     let packet = encode_client(&ClientMessage::Shoot(game.network.seq));
     let _ = game.network.socket.send(packet.as_bytes());
-    game.ammo -= 1;
     game.shot_flash = 0.12;
-    if game.ammo == 0 {
-        game.reload_timer = 1.0;
+}
+
+fn request_custom_level(game: &mut GameState, maze: Maze, status: &str) {
+    let packet = encode_client(&ClientMessage::CustomLevel(maze));
+    match game.network.socket.send(packet.as_bytes()) {
+        Ok(_) => game.status = status.to_string(),
+        Err(error) => game.status = format!("Custom level send failed: {error}"),
     }
+}
+
+fn load_custom_level_file() -> io::Result<Maze> {
+    let json = fs::read_to_string(CUSTOM_LEVEL_FILE)?;
+    let maze = serde_json::from_str::<Maze>(&json).map_err(io::Error::other)?;
+    if maze.cells.len() != maze.width.saturating_mul(maze.height)
+        || !(7..=31).contains(&maze.width)
+        || !(7..=31).contains(&maze.height)
+        || maze.width % 2 == 0
+        || maze.height % 2 == 0
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid maze dimensions",
+        ));
+    }
+    Ok(maze)
 }
 
 fn grab_cursor(game: &mut GameState) {
@@ -2620,10 +2649,10 @@ fn start_connection(server: &str, username: &str) -> io::Result<NetworkClient> {
 
 fn normalized_server(server: &str) -> String {
     let server = server.trim();
-    if server.parse::<std::net::IpAddr>().is_ok() {
-        format!("{server}:34254")
-    } else {
-        server.to_string()
+    match server.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(address)) => format!("{address}:34254"),
+        Ok(std::net::IpAddr::V6(address)) => format!("[{address}]:34254"),
+        Err(_) => server.to_string(),
     }
 }
 
@@ -2693,7 +2722,10 @@ fn remember_host(hosts: &mut Vec<HostEntry>, alias: &str, address: &str, usernam
 }
 
 fn server_host(server: &str) -> String {
-    server.split(':').next().unwrap_or(server).to_string()
+    server
+        .parse::<std::net::SocketAddr>()
+        .map(|address| address.ip().to_string())
+        .unwrap_or_else(|_| server.to_string())
 }
 
 fn shorten(text: &str, max_chars: usize) -> String {

@@ -1,3 +1,5 @@
+use crate::maze::Maze;
+
 #[derive(Debug, Clone)]
 pub enum ClientMessage {
     Join(String),
@@ -6,11 +8,13 @@ pub enum ClientMessage {
         forward: f32,
         strafe: f32,
         turn: f32,
+        look_delta: f32,
     },
     Shoot(u32),
     Ping,
     NextLevel,
     SetLevel(usize),
+    CustomLevel(Maze),
     Leave,
 }
 
@@ -44,6 +48,7 @@ pub enum ServerMessage {
         target: Option<u32>,
     },
     Level(usize),
+    CustomLevel(Maze),
     Pong,
     Reject(String),
 }
@@ -69,17 +74,27 @@ pub fn encode_client(message: &ClientMessage) -> String {
             forward,
             strafe,
             turn,
-        } => format!(
-            "INPUT|{}|{:.3}|{:.3}|{:.3}\n",
-            seq,
-            forward.clamp(-1.0, 1.0),
-            strafe.clamp(-1.0, 1.0),
-            turn.clamp(-1.0, 1.0)
-        ),
+            look_delta,
+        } => {
+            let look_delta = if look_delta.is_finite() {
+                *look_delta
+            } else {
+                0.0
+            };
+            format!(
+                "INPUT|{}|{:.3}|{:.3}|{:.3}|{:.6}\n",
+                seq,
+                forward.clamp(-1.0, 1.0),
+                strafe.clamp(-1.0, 1.0),
+                turn.clamp(-1.0, 1.0),
+                look_delta
+            )
+        }
         ClientMessage::Shoot(seq) => format!("SHOOT|{}\n", seq),
         ClientMessage::Ping => "PING\n".to_string(),
         ClientMessage::NextLevel => "NEXT\n".to_string(),
         ClientMessage::SetLevel(level) => format!("SETLEVEL|{}\n", level),
+        ClientMessage::CustomLevel(maze) => encode_maze("CUSTOM", maze),
         ClientMessage::Leave => "LEAVE\n".to_string(),
     }
 }
@@ -90,16 +105,27 @@ pub fn parse_client(input: &str) -> Option<ClientMessage> {
         "JOIN" => Some(ClientMessage::Join(sanitize_username(
             parts.get(1).copied().unwrap_or("Agent"),
         ))),
-        "INPUT" if parts.len() >= 5 => Some(ClientMessage::Input {
-            seq: parts[1].parse().ok()?,
-            forward: parts[2].parse::<f32>().ok()?.clamp(-1.0, 1.0),
-            strafe: parts[3].parse::<f32>().ok()?.clamp(-1.0, 1.0),
-            turn: parts[4].parse::<f32>().ok()?.clamp(-1.0, 1.0),
-        }),
+        "INPUT" if parts.len() >= 5 => {
+            let look_delta = parts
+                .get(5)
+                .and_then(|value| value.parse::<f32>().ok())
+                .unwrap_or(0.0);
+            if !look_delta.is_finite() {
+                return None;
+            }
+            Some(ClientMessage::Input {
+                seq: parts[1].parse().ok()?,
+                forward: parts[2].parse::<f32>().ok()?.clamp(-1.0, 1.0),
+                strafe: parts[3].parse::<f32>().ok()?.clamp(-1.0, 1.0),
+                turn: parts[4].parse::<f32>().ok()?.clamp(-1.0, 1.0),
+                look_delta,
+            })
+        }
         "SHOOT" => Some(ClientMessage::Shoot(parts.get(1)?.parse().ok()?)),
         "PING" => Some(ClientMessage::Ping),
         "NEXT" => Some(ClientMessage::NextLevel),
         "SETLEVEL" => Some(ClientMessage::SetLevel(parts.get(1)?.parse().ok()?)),
+        "CUSTOM" => Some(ClientMessage::CustomLevel(parse_maze(&parts)?)),
         "LEAVE" => Some(ClientMessage::Leave),
         _ => None,
     }
@@ -120,6 +146,10 @@ pub fn pong() -> &'static str {
 
 pub fn level(index: usize) -> String {
     format!("LEVEL|{}\n", index)
+}
+
+pub fn custom_level(maze: &Maze) -> String {
+    encode_maze("CUSTOMLEVEL", maze)
 }
 
 pub fn shot(shooter: u32, target: Option<u32>) -> String {
@@ -189,12 +219,75 @@ pub fn parse_server(input: &str) -> Option<ServerMessage> {
             })
         }
         "LEVEL" if parts.len() >= 2 => Some(ServerMessage::Level(parts[1].parse().ok()?)),
+        "CUSTOMLEVEL" => Some(ServerMessage::CustomLevel(parse_maze(&parts)?)),
         "PONG" => Some(ServerMessage::Pong),
         "REJECT" => Some(ServerMessage::Reject(
             parts.get(1).copied().unwrap_or("Rejected").to_string(),
         )),
         _ => None,
     }
+}
+
+fn encode_maze(prefix: &str, maze: &Maze) -> String {
+    let cells: String = maze
+        .cells
+        .iter()
+        .map(|cell| if *cell == 0 { '0' } else { '1' })
+        .collect();
+    format!(
+        "{}|{}|{}|{}|{}\n",
+        prefix, maze.width, maze.height, maze.seed, cells
+    )
+}
+
+fn parse_maze(parts: &[&str]) -> Option<Maze> {
+    if parts.len() < 5 {
+        return None;
+    }
+    let width = parts[1].parse::<usize>().ok()?;
+    let height = parts[2].parse::<usize>().ok()?;
+    let seed = parts[3].parse::<u64>().ok()?;
+    if !(7..=31).contains(&width)
+        || !(7..=31).contains(&height)
+        || width % 2 == 0
+        || height % 2 == 0
+    {
+        return None;
+    }
+    let expected = width.checked_mul(height)?;
+    let raw = parts[4].as_bytes();
+    if raw.len() != expected {
+        return None;
+    }
+    let mut cells = Vec::with_capacity(expected);
+    for byte in raw {
+        cells.push(match byte {
+            b'0' => 0,
+            b'1' => 1,
+            _ => return None,
+        });
+    }
+    for x in 0..width {
+        if cells[x] == 0 || cells[(height - 1) * width + x] == 0 {
+            return None;
+        }
+    }
+    for y in 0..height {
+        if cells[y * width] == 0 || cells[y * width + width - 1] == 0 {
+            return None;
+        }
+    }
+    if cells.iter().filter(|cell| **cell == 0).count() < 2 {
+        return None;
+    }
+    Some(Maze {
+        name: "Custom Maze".to_string(),
+        difficulty: "Custom".to_string(),
+        width,
+        height,
+        seed,
+        cells,
+    })
 }
 
 #[cfg(test)]
@@ -208,6 +301,7 @@ mod tests {
             forward: 1.0,
             strafe: -0.5,
             turn: 0.25,
+            look_delta: -0.123456,
         });
         match parse_client(&encoded).unwrap() {
             ClientMessage::Input {
@@ -215,11 +309,13 @@ mod tests {
                 forward,
                 strafe,
                 turn,
+                look_delta,
             } => {
                 assert_eq!(seq, 7);
                 assert_eq!(forward, 1.0);
                 assert_eq!(strafe, -0.5);
                 assert_eq!(turn, 0.25);
+                assert!((look_delta + 0.123456).abs() < 0.000001);
             }
             other => panic!("unexpected message: {other:?}"),
         }
@@ -230,6 +326,21 @@ mod tests {
         let encoded = encode_client(&ClientMessage::SetLevel(2));
         match parse_client(&encoded).unwrap() {
             ClientMessage::SetLevel(level) => assert_eq!(level, 2),
+            other => panic!("unexpected message: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn protocol_round_trips_custom_level() {
+        let maze = Maze::generated("Test", "Custom", 15, 15, 42);
+        let encoded = encode_client(&ClientMessage::CustomLevel(maze.clone()));
+        match parse_client(&encoded).unwrap() {
+            ClientMessage::CustomLevel(decoded) => {
+                assert_eq!(decoded.width, maze.width);
+                assert_eq!(decoded.height, maze.height);
+                assert_eq!(decoded.seed, maze.seed);
+                assert_eq!(decoded.cells, maze.cells);
+            }
             other => panic!("unexpected message: {other:?}"),
         }
     }
