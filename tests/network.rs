@@ -37,9 +37,7 @@ fn server_accepts_at_least_ten_udp_clients() {
         socket
             .set_read_timeout(Some(Duration::from_secs(2)))
             .expect("set read timeout");
-        socket
-            .send(format!("JOIN|audit_{index}\n").as_bytes())
-            .expect("send JOIN");
+        socket.send(b"JOIN|Agent\n").expect("send JOIN");
 
         let deadline = Instant::now() + Duration::from_secs(2);
         let mut welcomed = false;

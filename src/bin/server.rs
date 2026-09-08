@@ -88,7 +88,7 @@ fn main() -> io::Result<()> {
     println!("  bind: {}", config.bind);
     println!("  bots: {}", config.bots);
     println!(
-        "  level: {} — {} ({} dead ends)",
+        "  level: {} - {} ({} dead ends)",
         level_index + 1,
         levels[level_index].name,
         levels[level_index].dead_ends()
@@ -179,14 +179,6 @@ fn receive_packets(
                     let _ = socket.send_to(reject("Server is full").as_bytes(), source);
                     continue;
                 }
-                if players
-                    .values()
-                    .any(|player| player.name.eq_ignore_ascii_case(&name))
-                {
-                    let _ = socket.send_to(reject("Username is already in use").as_bytes(), source);
-                    continue;
-                }
-
                 let id = *next_id;
                 *next_id = next_id.wrapping_add(1).max(1);
                 let spawn = spawn_for_slot(&levels[*level_index], id as usize);
@@ -253,7 +245,7 @@ fn receive_packets(
                     *level_change_allowed_at = Instant::now() + Duration::from_secs(2);
                     broadcast_raw(socket, players, &level_packet(*level_index));
                     println!(
-                        "[level] {} — {} ({} dead ends)",
+                        "[level] {} - {} ({} dead ends)",
                         *level_index + 1,
                         levels[*level_index].name,
                         levels[*level_index].dead_ends()

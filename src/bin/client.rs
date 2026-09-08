@@ -78,6 +78,8 @@ struct RemoteVisual {
 
 #[derive(Debug)]
 struct GameState {
+    server: String,
+    username: String,
     network: NetworkClient,
     levels: Vec<Maze>,
     level_index: usize,
@@ -90,6 +92,7 @@ struct GameState {
     last_server_tick: u64,
     shot_flash: f32,
     status: String,
+    display_fps: f32,
 }
 
 #[derive(Debug)]
@@ -242,7 +245,7 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
                 Color::new(0.08, 0.15, 0.19, 1.0),
             );
         }
-        let label = format!("{}  —  {}  [{}]", host.alias, host.address, host.username);
+        let label = format!("{}  -  {}  [{}]", host.alias, host.address, host.username);
         draw_text(
             &label,
             rect.x + 8.0,
@@ -306,6 +309,8 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
             );
             save_hosts(&screen.hosts);
             return AppScreen::Game(GameState {
+                server: screen.server.clone(),
+                username: screen.username.clone(),
                 network: pending.network,
                 levels: builtin_levels(),
                 level_index: level.min(2),
@@ -318,6 +323,7 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
                 last_server_tick: 0,
                 shot_flash: 0.0,
                 status: "Connected".to_string(),
+                display_fps: 60.0,
             });
         } else if pending.started.elapsed() > Duration::from_secs(4) {
             screen.status = "No response from server (UDP timeout).".to_string();
@@ -336,6 +342,9 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
 
 fn update_game(mut game: GameState) -> AppScreen {
     let dt = get_frame_time().min(0.05);
+    let instant_fps = 1.0 / dt.max(0.0001);
+    let fps_alpha = 1.0 - (-dt / 0.5).exp();
+    game.display_fps += (instant_fps - game.display_fps) * fps_alpha;
     let maze = &game.levels[game.level_index];
 
     let forward = axis(KeyCode::W, KeyCode::S);
@@ -389,8 +398,8 @@ fn update_game(mut game: GameState) -> AppScreen {
             .socket
             .send(encode_client(&ClientMessage::Leave).as_bytes());
         return AppScreen::Connect(ConnectScreen {
-            server: DEFAULT_SERVER.to_string(),
-            username: "Agent".to_string(),
+            server: game.server.clone(),
+            username: game.username.clone(),
             alias: String::new(),
             active: ActiveField::Server,
             hosts: load_hosts(),
@@ -781,7 +790,7 @@ fn draw_minimap(game: &GameState, maze: &Maze) {
 
 fn draw_hud(game: &GameState, maze: &Maze) {
     let sw = screen_width();
-    let fps = get_fps();
+    let fps = game.display_fps.round() as i32;
     let fps_color = if fps >= 50 { GREEN } else { RED };
     let x = sw - 280.0;
     draw_rectangle(
@@ -818,7 +827,7 @@ fn draw_hud(game: &GameState, maze: &Maze) {
         LIGHTGRAY,
     );
     if game.health == 0 {
-        let text = "ELIMINATED — respawning...";
+        let text = "ELIMINATED - respawning...";
         let m = measure_text(text, None, 34, 1.0);
         draw_text(
             text,
@@ -946,7 +955,13 @@ fn edit_active_field(screen: &mut ConnectScreen) {
 
 fn start_connection(server: &str, username: &str) -> io::Result<NetworkClient> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
-    socket.connect(server.trim())?;
+    let server = server.trim();
+    let endpoint = if server.parse::<std::net::IpAddr>().is_ok() {
+        format!("{server}:34254")
+    } else {
+        server.to_string()
+    };
+    socket.connect(&endpoint)?;
     socket.set_nonblocking(true)?;
     let join = encode_client(&ClientMessage::Join(username.to_string()));
     socket.send(join.as_bytes())?;

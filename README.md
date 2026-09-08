@@ -1,4 +1,4 @@
-# multiplayer-fps — Maze Wars
+# multiplayer-fps - Maze Wars
 
 A native Rust recreation of the classic Maze Wars concept for the 01-edu `multiplayer-fps` subject.
 
