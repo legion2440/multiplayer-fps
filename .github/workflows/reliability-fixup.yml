@@ -26,6 +26,9 @@ jobs:
         with:
           components: clippy,rustfmt
 
+      - name: Format fixes
+        run: cargo +stable fmt --all
+
       - uses: dtolnay/rust-toolchain@1.74.0
 
       - name: Validate Rust 1.74
