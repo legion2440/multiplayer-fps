@@ -1,3 +1,4 @@
+# retry after frontend entrypoint repair
 name: Apply pending audit fixes
 
 on:
