@@ -27,13 +27,13 @@ jobs:
           cargo_path = Path('Cargo.toml')
           cargo = cargo_path.read_text()
           cargo = cargo.replace('rust-version = "1.87"', 'rust-version = "1.74"')
+          cargo = cargo.replace('macroquad = "=0.4.16"', 'macroquad = "=0.4.14"')
           if 'fontdue = "=0.9.3"' not in cargo:
-              cargo = cargo.replace('macroquad = "=0.4.16"\n', 'macroquad = "=0.4.16"\nfontdue = "=0.9.3"\n')
+              cargo = cargo.replace('macroquad = "=0.4.14"\n', 'macroquad = "=0.4.14"\nfontdue = "=0.9.3"\n')
           cargo_path.write_text(cargo)
 
           maze_path = Path('src/maze.rs')
-          maze = maze_path.read_text().replace('size.is_multiple_of(2)', 'size % 2 == 0')
-          maze_path.write_text(maze)
+          maze_path.write_text(maze_path.read_text().replace('size.is_multiple_of(2)', 'size % 2 == 0'))
 
           server_path = Path('src/bin/server.rs')
           server = server_path.read_text().replace(
@@ -59,6 +59,7 @@ jobs:
 
       - name: Pin compatible dependency graph
         run: |
+          cargo update -p macroquad --precise 0.4.14
           cargo update -p fontdue --precise 0.9.3
           sed -i '0,/^version = 4$/s//version = 3/' Cargo.lock
 
