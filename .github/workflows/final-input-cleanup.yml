@@ -1,0 +1,85 @@
+name: Final input cleanup
+
+on:
+  push:
+    branches:
+      - final-input-cleanup
+    paths:
+      - .github/workflows/final-input-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: final-input-cleanup
+          fetch-depth: 0
+
+      - name: Apply cleanup
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"pattern not found in {path}: {old!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "src/bin/server.rs",
+              """            player.input.forward,\n            player.input.strafe,\n            player.input.turn,\n            dt,\n""",
+              """            player.input.forward,\n            player.input.strafe,\n            0.0,\n            dt,\n""",
+          )
+
+          replace_once(
+              "src/bin/client.rs",
+              """                        game.angle = normalize_angle(\n                            game.angle + normalize_angle(player.angle - game.angle) * 0.08,\n                        );\n""",
+              "",
+          )
+
+          replace_once(
+              "src/bin/client.rs",
+              """    if save || is_key_pressed(KeyCode::S) {\n        editor.status = match serde_json::to_string_pretty(&editor.maze)\n            .map_err(io::Error::other)\n            .and_then(|json| fs::write(CUSTOM_LEVEL_FILE, json))\n        {\n            Ok(()) => format!(\"Saved {CUSTOM_LEVEL_FILE}.\"),\n            Err(error) => format!(\"Save failed: {error}\"),\n        };\n    }\n""",
+              """    if save || is_key_pressed(KeyCode::S) {\n        if !editor.maze.is_connected() {\n            editor.status = \"Save refused: maze must have one connected open region.\".to_string();\n        } else {\n            editor.status = match serde_json::to_string_pretty(&editor.maze)\n                .map_err(io::Error::other)\n                .and_then(|json| fs::write(CUSTOM_LEVEL_FILE, json))\n            {\n                Ok(()) => format!(\"Saved {CUSTOM_LEVEL_FILE}.\"),\n                Err(error) => format!(\"Save failed: {error}\"),\n            };\n        }\n    }\n""",
+          )
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: dtolnay/rust-toolchain@1.74.0
+
+      - name: Rust 1.74 check
+        run: cargo +1.74.0 check --locked --all-targets
+
+      - name: Format
+        run: cargo +stable fmt --all -- --check
+
+      - name: Check
+        env:
+          RUSTFLAGS: -Dwarnings
+        run: cargo +stable check --locked --all-targets
+
+      - name: Test
+        run: cargo +stable test --locked
+
+      - name: Clippy
+        run: cargo +stable clippy --locked --all-targets -- -D warnings
+
+      - name: Release build
+        run: cargo +stable build --locked --release --bins
+
+      - name: Commit validated cleanup
+        run: |
+          git rm .github/workflows/final-input-cleanup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/bin/client.rs src/bin/server.rs
+          git commit -m "fix: finalize authoritative view input"
+          git push origin HEAD:final-input-cleanup
