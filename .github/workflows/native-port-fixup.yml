@@ -75,15 +75,6 @@ jobs:
               server = server.replace(old, new)
           server_path.write_text(server)
 
-          ci_path = Path('.github/workflows/ci.yml')
-          ci = ci_path.read_text()
-          ci = ci.replace('dtolnay/rust-toolchain@1.87.0', 'dtolnay/rust-toolchain@1.74.0')
-          ci = ci.replace('Rust 1.87 check', 'Rust 1.74 check')
-          marker = '\n  frontend:\n'
-          if marker in ci:
-              ci = ci.split(marker, 1)[0].rstrip() + '\n'
-          ci_path.write_text(ci)
-
           shutil.rmtree('frontend', ignore_errors=True)
 
           gitignore_path = Path('.gitignore')
@@ -98,6 +89,8 @@ jobs:
           if 'SETLEVEL|<level_index>' not in doc:
               doc = doc.replace('NEXT\nLEAVE', 'NEXT\nSETLEVEL|<level_index>\nLEAVE')
           protocol_doc.write_text(doc)
+
+          Path('README.md').write_text('''# multiplayer-fps - Maze Wars\n\nA native Rust recreation of Maze Wars for the 01-edu `multiplayer-fps` subject. Multiplayer uses a central authoritative UDP server and a Macroquad desktop client.\n\n## Features\n\n- First-person Maze Wars-style renderer with eye-shaped opponents.\n- Full-world minimap with live position and facing direction.\n- On-screen FPS and frame-time display.\n- Real UDP client/server networking.\n- Server accepts up to 64 network clients.\n- GUI connection screen for server IP, username and saved host aliases.\n- Three built-in levels with strictly increasing dead-end counts.\n- Server-authoritative movement, collision, shooting, damage, score, death and respawn.\n- Client prediction and remote-player interpolation.\n- Mouse look, left-click/Space fire, reload and weapon HUD.\n- Scoreboard, settings and multiple visual themes.\n- Native level editor and procedural maze generation.\n- Server-side AI players with maze pathfinding and line-of-sight combat.\n\n## Requirements\n\n- Rust 1.74+ (edition 2021).\n- Desktop environment supported by Macroquad.\n\n## Run\n\nStart the server:\n\n```bash\ncargo run --release --bin server\n```\n\nDefault bind:\n\n```text\n0.0.0.0:34254\n```\n\nOptional:\n\n```bash\ncargo run --release --bin server -- --bind 0.0.0.0:34254 --bots 3 --level 1\n```\n\nStart each client:\n\n```bash\ncargo run --release --bin client\n```\n\nor:\n\n```bash\ncargo run --release\n```\n\nThe connection screen accepts either a bare IP such as `127.0.0.1` or an explicit endpoint such as `127.0.0.1:34254`.\n\nDuplicate display names are supported; network identity uses server-assigned player IDs.\n\n## Controls\n\n| Input | Action |\n| --- | --- |\n| `W / S` | Move forward / backward |\n| `A / D` | Strafe |\n| Mouse | Look |\n| `Q / E` or arrow keys | Keyboard turning |\n| Left mouse / `Space` | Shoot |\n| `R` | Reload |\n| `Tab` | Scoreboard |\n| `Esc` | Release mouse / return to connection screen |\n\nUse the top bar for built-in levels, procedural generation, gateway, editor, scoreboard and settings.\n\n## Level editor\n\nOpen **LEVEL EDITOR** from the connection screen.\n\n- Left mouse: toggle a wall cell.\n- `G`: generate a procedural maze.\n- Size control: cycle maze sizes.\n- `S`: save `custom_level.json`.\n- `L`: load `custom_level.json`.\n- `Esc`: return.\n\n## Multiplayer test\n\nFor a local multi-client run:\n\n```bash\ncargo run --release --bin server -- --bots 0\n```\n\nLaunch 10+ clients and connect them to:\n\n```text\n127.0.0.1:34254\n```\n\nFor LAN play, keep the server on `0.0.0.0:34254` and connect clients to the server machine's LAN IP.\n\n## Checks\n\n```bash\ncargo fmt --all -- --check\ncargo check --all-targets --locked\ncargo test --locked\ncargo clippy --all-targets --locked -- -D warnings\ncargo build --release --bins --locked\n```\n\nCI also compiles all targets on Rust 1.74. The UDP integration test starts 10 independent clients with the same display name, validating connection capacity and server-assigned identity. Level tests verify strictly increasing dead-end counts.\n\n## Architecture\n\n```text\nsrc/\n├── lib.rs\n├── maze.rs         maze generation, collision, ray casting, BFS\n├── protocol.rs     UDP packet encoding/decoding\n└── bin/\n    ├── server.rs   authoritative 60 Hz UDP server + AI\n    └── client.rs   native Macroquad UDP client + UI/rendering/editor\n```\n\nSee `PROTOCOL.md` for the UDP wire format.\n''')
 
       - name: Pin compatible dependency graph
         run: |
@@ -121,9 +114,8 @@ jobs:
           cargo +stable clippy --all-targets --locked -- -D warnings
           RUSTFLAGS=-Dwarnings cargo +stable build --release --bins --locked
 
-      - name: Commit validated changes
+      - name: Commit validated sources
         run: |
-          rm .github/workflows/native-port-fixup.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
