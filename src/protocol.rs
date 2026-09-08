@@ -8,7 +8,7 @@ pub enum ClientMessage {
         forward: f32,
         strafe: f32,
         turn: f32,
-        look_delta: f32,
+        angle: f32,
     },
     Shoot(u32),
     Ping,
@@ -74,20 +74,16 @@ pub fn encode_client(message: &ClientMessage) -> String {
             forward,
             strafe,
             turn,
-            look_delta,
+            angle,
         } => {
-            let look_delta = if look_delta.is_finite() {
-                *look_delta
-            } else {
-                0.0
-            };
+            let angle = if angle.is_finite() { *angle } else { 0.0 };
             format!(
                 "INPUT|{}|{:.3}|{:.3}|{:.3}|{:.6}\n",
                 seq,
                 forward.clamp(-1.0, 1.0),
                 strafe.clamp(-1.0, 1.0),
                 turn.clamp(-1.0, 1.0),
-                look_delta
+                angle
             )
         }
         ClientMessage::Shoot(seq) => format!("SHOOT|{}\n", seq),
@@ -106,11 +102,11 @@ pub fn parse_client(input: &str) -> Option<ClientMessage> {
             parts.get(1).copied().unwrap_or("Agent"),
         ))),
         "INPUT" if parts.len() >= 5 => {
-            let look_delta = parts
+            let angle = parts
                 .get(5)
                 .and_then(|value| value.parse::<f32>().ok())
                 .unwrap_or(0.0);
-            if !look_delta.is_finite() {
+            if !angle.is_finite() {
                 return None;
             }
             Some(ClientMessage::Input {
@@ -118,7 +114,7 @@ pub fn parse_client(input: &str) -> Option<ClientMessage> {
                 forward: parts[2].parse::<f32>().ok()?.clamp(-1.0, 1.0),
                 strafe: parts[3].parse::<f32>().ok()?.clamp(-1.0, 1.0),
                 turn: parts[4].parse::<f32>().ok()?.clamp(-1.0, 1.0),
-                look_delta,
+                angle,
             })
         }
         "SHOOT" => Some(ClientMessage::Shoot(parts.get(1)?.parse().ok()?)),
@@ -280,14 +276,18 @@ fn parse_maze(parts: &[&str]) -> Option<Maze> {
     if cells.iter().filter(|cell| **cell == 0).count() < 2 {
         return None;
     }
-    Some(Maze {
+    let maze = Maze {
         name: "Custom Maze".to_string(),
         difficulty: "Custom".to_string(),
         width,
         height,
         seed,
         cells,
-    })
+    };
+    if !maze.is_connected() {
+        return None;
+    }
+    Some(maze)
 }
 
 #[cfg(test)]
@@ -301,7 +301,7 @@ mod tests {
             forward: 1.0,
             strafe: -0.5,
             turn: 0.25,
-            look_delta: -0.123456,
+            angle: -0.123456,
         });
         match parse_client(&encoded).unwrap() {
             ClientMessage::Input {
@@ -309,13 +309,13 @@ mod tests {
                 forward,
                 strafe,
                 turn,
-                look_delta,
+                angle,
             } => {
                 assert_eq!(seq, 7);
                 assert_eq!(forward, 1.0);
                 assert_eq!(strafe, -0.5);
                 assert_eq!(turn, 0.25);
-                assert!((look_delta + 0.123456).abs() < 0.000001);
+                assert!((angle + 0.123456).abs() < 0.000001);
             }
             other => panic!("unexpected message: {other:?}"),
         }
@@ -343,6 +343,16 @@ mod tests {
             }
             other => panic!("unexpected message: {other:?}"),
         }
+    }
+
+    #[test]
+    fn protocol_rejects_disconnected_custom_level() {
+        let mut cells = vec![b'1'; 7 * 7];
+        cells[8] = b'0';
+        cells[5 * 7 + 5] = b'0';
+        let walls = String::from_utf8(cells).unwrap();
+        let packet = format!("CUSTOM|7|7|1|{walls}\n");
+        assert!(parse_client(&packet).is_none());
     }
 
     #[test]
