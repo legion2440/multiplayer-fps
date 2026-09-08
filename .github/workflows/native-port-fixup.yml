@@ -53,6 +53,10 @@ jobs:
               'io::Error::new(io::ErrorKind::Other, error)',
               'io::Error::other(error)',
           )
+          client = client.replace(
+              '.map_err(|error| io::Error::other(error))',
+              '.map_err(io::Error::other)',
+          )
           client_path.write_text(client)
 
           maze_path = Path('src/maze.rs')
