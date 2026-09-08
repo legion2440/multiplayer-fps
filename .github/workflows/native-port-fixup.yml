@@ -32,6 +32,16 @@ jobs:
           cargo = cargo.replace('fontdue = "=0.9.3"\n', '')
           cargo_path.write_text(cargo)
 
+          client_path = Path('src/bin/client.rs')
+          client = client_path.read_text()
+          compat = '''\nfn draw_text<T: AsRef<str>>(\n    text: T,\n    x: f32,\n    y: f32,\n    font_size: f32,\n    color: Color,\n) -> TextDimensions {\n    macroquad::prelude::draw_text(text.as_ref(), x, y, font_size, color)\n}\n'''
+          if 'fn draw_text<T: AsRef<str>>' not in client:
+              marker = 'const DEFAULT_SERVER: &str = "127.0.0.1:34254";\n'
+              if marker not in client:
+                  raise SystemExit('client insertion marker not found')
+              client = client.replace(marker, compat + '\n' + marker, 1)
+          client_path.write_text(client)
+
           maze_path = Path('src/maze.rs')
           maze_path.write_text(maze_path.read_text().replace('size.is_multiple_of(2)', 'size % 2 == 0'))
 
