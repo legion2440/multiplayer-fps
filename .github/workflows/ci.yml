@@ -35,15 +35,27 @@ jobs:
                   })
                   .collect();'''
           if old in text:
-              server.write_text(text.replace(old, new))
+              text = text.replace(old, new)
+          text = text.replace(
+              "if tick % SNAPSHOT_EVERY_TICKS == 0 {",
+              "if tick.is_multiple_of(SNAPSHOT_EVERY_TICKS) {",
+          )
+          text = text.replace(
+              "let jitter = ((bot.id as u64 * 17 + tick) % 7) as u64;",
+              "let jitter = (bot.id as u64 * 17 + tick) % 7;",
+          )
+          server.write_text(text)
 
           client = Path("src/bin/client.rs")
           text = client.read_text()
-          client.write_text(text.replace("810.0.min(screen_width() - 400.0)", "810.0_f32.min(screen_width() - 400.0)"))
+          text = text.replace("810.0.min(screen_width() - 400.0)", "810.0_f32.min(screen_width() - 400.0)")
+          text = text.replace("draw_text(&format!(", "draw_text(format!(")
+          client.write_text(text)
 
           maze = Path("src/maze.rs")
           text = maze.read_text()
-          text = text.replace("pub fn move_entity(\n", "#[allow(clippy::too_many_arguments)]\npub fn move_entity(\n", 1)
+          if "#[allow(clippy::too_many_arguments)]\npub fn move_entity(" not in text:
+              text = text.replace("pub fn move_entity(\n", "#[allow(clippy::too_many_arguments)]\npub fn move_entity(\n", 1)
           text = text.replace("if size % 2 == 0 {", "if size.is_multiple_of(2) {")
           maze.write_text(text)
           PY
