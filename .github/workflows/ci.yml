@@ -5,7 +5,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   rust:
@@ -15,66 +15,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy,rustfmt
-      - name: Apply source fixes and format
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          server = Path("src/bin/server.rs")
-          text = server.read_text()
-          old = '''    let shooters: Vec<u32> = players
-                  .values_mut()
-                  .filter(|player| player.health > 0 && std::mem::take(&mut player.shoot_requested))
-                  .map(|player| player.id)
-                  .collect();'''
-          new = '''    let shooters: Vec<u32> = players
-                  .values_mut()
-                  .filter_map(|player| {
-                      (player.health > 0 && std::mem::take(&mut player.shoot_requested))
-                          .then_some(player.id)
-                  })
-                  .collect();'''
-          if old in text:
-              text = text.replace(old, new)
-          text = text.replace(
-              "if tick % SNAPSHOT_EVERY_TICKS == 0 {",
-              "if tick.is_multiple_of(SNAPSHOT_EVERY_TICKS) {",
-          )
-          text = text.replace(
-              "let jitter = ((bot.id as u64 * 17 + tick) % 7) as u64;",
-              "let jitter = (bot.id as u64 * 17 + tick) % 7;",
-          )
-          server.write_text(text)
-
-          client = Path("src/bin/client.rs")
-          text = client.read_text()
-          text = text.replace("810.0.min(screen_width() - 400.0)", "810.0_f32.min(screen_width() - 400.0)")
-          text = text.replace("draw_text(&format!(", "draw_text(format!(")
-          client.write_text(text)
-
-          maze = Path("src/maze.rs")
-          text = maze.read_text()
-          if "#[allow(clippy::too_many_arguments)]\npub fn move_entity(" not in text:
-              text = text.replace("pub fn move_entity(\n", "#[allow(clippy::too_many_arguments)]\npub fn move_entity(\n", 1)
-          text = text.replace("if size % 2 == 0 {", "if size.is_multiple_of(2) {")
-          maze.write_text(text)
-          PY
-          cargo fmt --all
+      - name: Format
+        run: cargo fmt --all -- --check
       - name: Check
         env:
           RUSTFLAGS: -Dwarnings
-        run: cargo check --all-targets
+        run: cargo check --all-targets --locked
       - name: Test library
-        run: cargo test --lib
+        run: cargo test --lib --locked
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
-      - name: Commit generated fixes
-        if: github.ref == 'refs/heads/implementation'
-        run: |
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src Cargo.lock
-            git commit -m "fix: satisfy compiler and format checks"
-            git push
-          fi
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Build release binaries
+        env:
+          RUSTFLAGS: -Dwarnings
+        run: cargo build --release --bins --locked
