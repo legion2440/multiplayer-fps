@@ -1,0 +1,49 @@
+name: Reliability fixes validation
+
+on:
+  push:
+    branches:
+      - reliability-fixes
+    paths:
+      - .github/workflows/reliability-fixup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reliability-fixes
+          fetch-depth: 0
+
+      - name: Apply fixes
+        run: python tools/reliability_fix.py
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - uses: dtolnay/rust-toolchain@1.74.0
+
+      - name: Validate Rust 1.74
+        run: cargo +1.74.0 check --all-targets --locked
+
+      - name: Validate stable
+        run: |
+          cargo +stable fmt --all -- --check
+          RUSTFLAGS=-Dwarnings cargo +stable check --all-targets --locked
+          cargo +stable test --lib --locked
+          cargo +stable test --test network --locked
+          cargo +stable clippy --all-targets --locked -- -D warnings
+          RUSTFLAGS=-Dwarnings cargo +stable build --release --bins --locked
+
+      - name: Commit validated fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/bin/client.rs src/bin/server.rs src/maze.rs src/protocol.rs PROTOCOL.md
+          git commit -m "fix: harden UDP state recovery" || exit 0
+          git push origin reliability-fixes
