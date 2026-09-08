@@ -1,0 +1,5 @@
+/target/
+/hosts.json
+/custom_level.json
+*.log
+.DS_Store
