@@ -19,10 +19,11 @@ jobs:
           ref: native-ui-port
           fetch-depth: 0
 
-      - name: Apply compatibility and server changes
+      - name: Apply native client finalization
         shell: python
         run: |
           from pathlib import Path
+          import shutil
 
           cargo_path = Path('Cargo.toml')
           cargo = cargo_path.read_text()
@@ -43,6 +44,14 @@ jobs:
           client = client.replace(
               'draw_dark_button(gateway, shorten(&gateway_text, 20), false);',
               'draw_dark_button(gateway, &shorten(&gateway_text, 20), false);',
+          )
+          client = client.replace(
+              '#[derive(Debug, Clone, Copy)]\nstruct Palette {',
+              '#[derive(Debug, Clone, Copy)]\n#[allow(dead_code)]\nstruct Palette {',
+          )
+          client = client.replace(
+              'io::Error::new(io::ErrorKind::Other, error)',
+              'io::Error::other(error)',
           )
           client_path.write_text(client)
 
@@ -70,6 +79,21 @@ jobs:
           if marker in ci:
               ci = ci.split(marker, 1)[0].rstrip() + '\n'
           ci_path.write_text(ci)
+
+          shutil.rmtree('frontend', ignore_errors=True)
+
+          gitignore_path = Path('.gitignore')
+          gitignore = '\n'.join(
+              line for line in gitignore_path.read_text().splitlines()
+              if not line.startswith('frontend/') and line != '!frontend/.env.example'
+          ) + '\n'
+          gitignore_path.write_text(gitignore)
+
+          protocol_doc = Path('PROTOCOL.md')
+          doc = protocol_doc.read_text()
+          if 'SETLEVEL|<level_index>' not in doc:
+              doc = doc.replace('NEXT\nLEAVE', 'NEXT\nSETLEVEL|<level_index>\nLEAVE')
+          protocol_doc.write_text(doc)
 
       - name: Pin compatible dependency graph
         run: |
