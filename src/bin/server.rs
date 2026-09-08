@@ -21,7 +21,6 @@ const DEFAULT_BOTS: usize = 3;
 struct InputState {
     forward: f32,
     strafe: f32,
-    turn: f32,
 }
 
 #[derive(Debug)]
@@ -214,7 +213,7 @@ fn receive_packets(
                 seq: _,
                 forward,
                 strafe,
-                turn,
+                turn: _,
                 angle,
             } => {
                 if let Some(player) = player_for_source_mut(players, address_to_id, source) {
@@ -222,11 +221,7 @@ fn receive_packets(
                     if angle.is_finite() {
                         player.angle = normalize_angle(angle);
                     }
-                    player.input = InputState {
-                        forward,
-                        strafe,
-                        turn,
-                    };
+                    player.input = InputState { forward, strafe };
                 }
             }
             ClientMessage::CustomLevel(maze) => {
@@ -339,7 +334,7 @@ fn update_humans(players: &mut HashMap<u32, Player>, maze: &Maze, dt: f32) {
             &mut player.angle,
             player.input.forward,
             player.input.strafe,
-            player.input.turn,
+            0.0,
             dt,
         );
     }

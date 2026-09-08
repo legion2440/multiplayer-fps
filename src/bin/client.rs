@@ -743,9 +743,6 @@ fn update_game(mut game: GameState) -> AppScreen {
                             game.x += error_x * 0.12;
                             game.y += error_y * 0.12;
                         }
-                        game.angle = normalize_angle(
-                            game.angle + normalize_angle(player.angle - game.angle) * 0.08,
-                        );
                     } else {
                         seen.push(player.id);
                         let old_health = game
@@ -937,13 +934,17 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
         );
     }
     if save || is_key_pressed(KeyCode::S) {
-        editor.status = match serde_json::to_string_pretty(&editor.maze)
-            .map_err(io::Error::other)
-            .and_then(|json| fs::write(CUSTOM_LEVEL_FILE, json))
-        {
-            Ok(()) => format!("Saved {CUSTOM_LEVEL_FILE}."),
-            Err(error) => format!("Save failed: {error}"),
-        };
+        if !editor.maze.is_connected() {
+            editor.status = "Save refused: maze must have one connected open region.".to_string();
+        } else {
+            editor.status = match serde_json::to_string_pretty(&editor.maze)
+                .map_err(io::Error::other)
+                .and_then(|json| fs::write(CUSTOM_LEVEL_FILE, json))
+            {
+                Ok(()) => format!("Saved {CUSTOM_LEVEL_FILE}."),
+                Err(error) => format!("Save failed: {error}"),
+            };
+        }
     }
     if load || is_key_pressed(KeyCode::L) {
         editor.status = match fs::read_to_string(CUSTOM_LEVEL_FILE)
