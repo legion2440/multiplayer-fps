@@ -13,9 +13,9 @@ A native Rust recreation of Maze Wars for the 01-edu `multiplayer-fps` subject. 
 - Three built-in levels with strictly increasing dead-end counts.
 - Server-authoritative movement, collision, shooting, damage, score, death and respawn.
 - Client prediction and remote-player interpolation.
-- Mouse look, left-click/Space fire, reload and weapon HUD.
+- Frame-rate-independent mouse look, left-click/Space fire and weapon HUD.
 - Scoreboard, settings and multiple visual themes.
-- Native level editor and procedural maze generation.
+- Native level editor, procedural maze generation and playable custom mazes.
 - Server-side AI players with maze pathfinding and line-of-sight combat.
 
 ## Requirements
@@ -68,11 +68,10 @@ Duplicate display names are supported; network identity uses server-assigned pla
 | Mouse | Look |
 | `Q / E` or arrow keys | Keyboard turning |
 | Left mouse / `Space` | Shoot |
-| `R` | Reload |
 | `Tab` | Scoreboard |
 | `Esc` | Release mouse / return to connection screen |
 
-Use the top bar for built-in levels, procedural generation, gateway, editor, scoreboard and settings.
+Use the top bar for built-in levels, procedural generation, the saved custom maze, scoreboard and settings. Gateway/custom actions do not disconnect a live match; use `Esc` to leave the server and edit maps from the connection screen.
 
 ## Level editor
 
@@ -84,6 +83,8 @@ Open **LEVEL EDITOR** from the connection screen.
 - `S`: save `custom_level.json`.
 - `L`: load `custom_level.json`.
 - `Esc`: return.
+
+After saving, connect to the server and press **CUSTOM** in the game header. The maze is sent to the authoritative server and broadcast to all connected clients. **PROCEDURAL** generates and activates a fresh networked custom maze without disconnecting.
 
 ## Multiplayer test
 

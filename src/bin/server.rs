@@ -1,7 +1,7 @@
 use multiplayer_fps::maze::{builtin_levels, move_entity, normalize_angle, Maze};
 use multiplayer_fps::protocol::{
-    level as level_packet, parse_client, pong, reject, shot, state, welcome, ClientMessage,
-    NetPlayer,
+    custom_level as custom_level_packet, level as level_packet, parse_client, pong, reject, shot,
+    state, welcome, ClientMessage, NetPlayer,
 };
 use std::collections::HashMap;
 use std::f32::consts::PI;
@@ -71,7 +71,7 @@ fn main() -> io::Result<()> {
     let socket = UdpSocket::bind(&config.bind)?;
     socket.set_nonblocking(true)?;
 
-    let levels = builtin_levels();
+    let mut levels = builtin_levels();
     let mut level_index = config.level.min(levels.len() - 1);
     let mut players: HashMap<u32, Player> = HashMap::new();
     let mut address_to_id: HashMap<SocketAddr, u32> = HashMap::new();
@@ -107,7 +107,7 @@ fn main() -> io::Result<()> {
             &mut recv_buf,
             &mut players,
             &mut address_to_id,
-            &levels,
+            &mut levels,
             &mut level_index,
             &mut next_id,
             &mut level_change_allowed_at,
@@ -146,7 +146,7 @@ fn receive_packets(
     buf: &mut [u8],
     players: &mut HashMap<u32, Player>,
     address_to_id: &mut HashMap<SocketAddr, u32>,
-    levels: &[Maze],
+    levels: &mut Vec<Maze>,
     level_index: &mut usize,
     next_id: &mut u32,
     level_change_allowed_at: &mut Instant,
@@ -171,6 +171,7 @@ fn receive_packets(
                             welcome(player.id, *level_index, player.x, player.y).as_bytes(),
                             source,
                         );
+                        send_active_custom(socket, source, levels, *level_index);
                     }
                     continue;
                 }
@@ -206,6 +207,7 @@ fn receive_packets(
                     welcome(id, *level_index, spawn.0, spawn.1).as_bytes(),
                     source,
                 );
+                send_active_custom(socket, source, levels, *level_index);
                 println!("[join] {name} from {source} as #{id}");
             }
             ClientMessage::Input {
@@ -213,14 +215,42 @@ fn receive_packets(
                 forward,
                 strafe,
                 turn,
+                look_delta,
             } => {
                 if let Some(player) = player_for_source_mut(players, address_to_id, source) {
                     player.last_seen = Instant::now();
+                    if look_delta.is_finite() {
+                        player.angle = normalize_angle(player.angle + look_delta);
+                    }
                     player.input = InputState {
                         forward,
                         strafe,
                         turn,
                     };
+                }
+            }
+            ClientMessage::CustomLevel(maze) => {
+                if address_to_id.contains_key(&source) && Instant::now() >= *level_change_allowed_at
+                {
+                    const CUSTOM_INDEX: usize = 3;
+                    if levels.len() == CUSTOM_INDEX {
+                        levels.push(maze);
+                    } else if levels.len() > CUSTOM_INDEX {
+                        levels[CUSTOM_INDEX] = maze;
+                    } else {
+                        continue;
+                    }
+                    *level_index = CUSTOM_INDEX;
+                    reset_for_level(players, &levels[CUSTOM_INDEX]);
+                    *level_change_allowed_at = Instant::now() + Duration::from_secs(2);
+                    broadcast_raw(socket, players, &custom_level_packet(&levels[CUSTOM_INDEX]));
+                    broadcast_raw(socket, players, &level_packet(CUSTOM_INDEX));
+                    println!(
+                        "[level] custom - {}x{} ({} dead ends)",
+                        levels[CUSTOM_INDEX].width,
+                        levels[CUSTOM_INDEX].height,
+                        levels[CUSTOM_INDEX].dead_ends()
+                    );
                 }
             }
             ClientMessage::Shoot(_) => {
@@ -276,6 +306,14 @@ fn receive_packets(
                     }
                 }
             }
+        }
+    }
+}
+
+fn send_active_custom(socket: &UdpSocket, source: SocketAddr, levels: &[Maze], level_index: usize) {
+    if level_index >= 3 {
+        if let Some(maze) = levels.get(level_index) {
+            let _ = socket.send_to(custom_level_packet(maze).as_bytes(), source);
         }
     }
 }
