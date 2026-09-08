@@ -21,7 +21,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply fixes
-        run: python tools/reliability_fix.py
+        run: |
+          sed -i 's/cells\[1 \* 7 + 1\]/cells[8]/' tools/reliability_fix.py
+          python tools/reliability_fix.py
 
       - uses: dtolnay/rust-toolchain@stable
         with:
