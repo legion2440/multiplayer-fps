@@ -1,6 +1,8 @@
 use macroquad::prelude::*;
 use multiplayer_fps::maze::{builtin_levels, move_entity, normalize_angle, Maze};
-use multiplayer_fps::protocol::{encode_client, parse_server, ClientMessage, NetPlayer, ServerMessage};
+use multiplayer_fps::protocol::{
+    encode_client, parse_server, ClientMessage, NetPlayer, ServerMessage,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::f32::consts::PI;
@@ -148,18 +150,52 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
     let panel_y = 70.0;
     let panel_w = (screen_width() * 0.56).clamp(620.0, 760.0);
     let panel_h = (screen_height() - 140.0).max(560.0);
-    draw_rectangle(panel_x, panel_y, panel_w, panel_h, Color::new(0.025, 0.035, 0.05, 0.96));
-    draw_rectangle_lines(panel_x, panel_y, panel_w, panel_h, 2.0, Color::new(0.15, 0.75, 0.85, 0.7));
+    draw_rectangle(
+        panel_x,
+        panel_y,
+        panel_w,
+        panel_h,
+        Color::new(0.025, 0.035, 0.05, 0.96),
+    );
+    draw_rectangle_lines(
+        panel_x,
+        panel_y,
+        panel_w,
+        panel_h,
+        2.0,
+        Color::new(0.15, 0.75, 0.85, 0.7),
+    );
 
     draw_text("MAZE WARS", panel_x + 36.0, panel_y + 62.0, 46.0, WHITE);
-    draw_text("MULTIPLAYER FPS / UDP", panel_x + 38.0, panel_y + 92.0, 18.0, Color::new(0.3, 0.8, 0.9, 1.0));
+    draw_text(
+        "MULTIPLAYER FPS / UDP",
+        panel_x + 38.0,
+        panel_y + 92.0,
+        18.0,
+        Color::new(0.3, 0.8, 0.9, 1.0),
+    );
 
     let server_rect = Rect::new(panel_x + 38.0, panel_y + 138.0, panel_w - 76.0, 52.0);
     let user_rect = Rect::new(panel_x + 38.0, panel_y + 226.0, panel_w - 76.0, 52.0);
     let alias_rect = Rect::new(panel_x + 38.0, panel_y + 314.0, panel_w - 76.0, 52.0);
-    draw_field("SERVER IP:PORT", &screen.server, server_rect, screen.active == ActiveField::Server);
-    draw_field("USERNAME", &screen.username, user_rect, screen.active == ActiveField::Username);
-    draw_field("HOST ALIAS (OPTIONAL)", &screen.alias, alias_rect, screen.active == ActiveField::Alias);
+    draw_field(
+        "SERVER IP:PORT",
+        &screen.server,
+        server_rect,
+        screen.active == ActiveField::Server,
+    );
+    draw_field(
+        "USERNAME",
+        &screen.username,
+        user_rect,
+        screen.active == ActiveField::Username,
+    );
+    draw_field(
+        "HOST ALIAS (OPTIONAL)",
+        &screen.alias,
+        alias_rect,
+        screen.active == ActiveField::Alias,
+    );
 
     if clicked(server_rect) {
         screen.active = ActiveField::Server;
@@ -173,10 +209,23 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
 
     let connect_rect = Rect::new(panel_x + 38.0, panel_y + 398.0, 230.0, 54.0);
     let editor_rect = Rect::new(panel_x + 286.0, panel_y + 398.0, 230.0, 54.0);
-    let connect_clicked = draw_button(connect_rect, if screen.pending.is_some() { "CONNECTING..." } else { "CONNECT" });
+    let connect_clicked = draw_button(
+        connect_rect,
+        if screen.pending.is_some() {
+            "CONNECTING..."
+        } else {
+            "CONNECT"
+        },
+    );
     let editor_clicked = draw_button(editor_rect, "LEVEL EDITOR");
 
-    draw_text(&screen.status, panel_x + 38.0, panel_y + 486.0, 20.0, LIGHTGRAY);
+    draw_text(
+        &screen.status,
+        panel_x + 38.0,
+        panel_y + 486.0,
+        20.0,
+        LIGHTGRAY,
+    );
     draw_text("Saved hosts", panel_x + 38.0, panel_y + 532.0, 22.0, WHITE);
 
     let mut chosen_host = None;
@@ -185,10 +234,22 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
         let rect = Rect::new(panel_x + 38.0, y, panel_w - 76.0, 28.0);
         let hover = point_in_rect(mouse_position(), rect);
         if hover {
-            draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.08, 0.15, 0.19, 1.0));
+            draw_rectangle(
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                Color::new(0.08, 0.15, 0.19, 1.0),
+            );
         }
         let label = format!("{}  —  {}  [{}]", host.alias, host.address, host.username);
-        draw_text(&label, rect.x + 8.0, rect.y + 20.0, 18.0, if hover { WHITE } else { GRAY });
+        draw_text(
+            &label,
+            rect.x + 8.0,
+            rect.y + 20.0,
+            18.0,
+            if hover { WHITE } else { GRAY },
+        );
         if hover && is_mouse_button_pressed(MouseButton::Left) {
             chosen_host = Some(index);
         }
@@ -237,7 +298,12 @@ fn update_connect(mut screen: ConnectScreen) -> AppScreen {
             screen.status = format!("Server rejected connection: {reason}");
         } else if let Some((id, level, x, y)) = joined {
             pending.network.player_id = id;
-            remember_host(&mut screen.hosts, &screen.alias, &screen.server, &screen.username);
+            remember_host(
+                &mut screen.hosts,
+                &screen.alias,
+                &screen.server,
+                &screen.username,
+            );
             save_hosts(&screen.hosts);
             return AppScreen::Game(GameState {
                 network: pending.network,
@@ -275,7 +341,16 @@ fn update_game(mut game: GameState) -> AppScreen {
     let forward = axis(KeyCode::W, KeyCode::S);
     let strafe = axis(KeyCode::D, KeyCode::A);
     let turn = axis(KeyCode::Right, KeyCode::Left) + axis(KeyCode::E, KeyCode::Q);
-    move_entity(maze, &mut game.x, &mut game.y, &mut game.angle, forward, strafe, turn.clamp(-1.0, 1.0), dt);
+    move_entity(
+        maze,
+        &mut game.x,
+        &mut game.y,
+        &mut game.angle,
+        forward,
+        strafe,
+        turn.clamp(-1.0, 1.0),
+        dt,
+    );
 
     if game.network.last_input_sent.elapsed() >= INPUT_SEND_INTERVAL {
         game.network.seq = game.network.seq.wrapping_add(1);
@@ -296,14 +371,23 @@ fn update_game(mut game: GameState) -> AppScreen {
         game.shot_flash = 0.12;
     }
     if is_key_pressed(KeyCode::N) {
-        let _ = game.network.socket.send(encode_client(&ClientMessage::NextLevel).as_bytes());
+        let _ = game
+            .network
+            .socket
+            .send(encode_client(&ClientMessage::NextLevel).as_bytes());
     }
     if game.network.last_ping.elapsed() >= PING_INTERVAL {
-        let _ = game.network.socket.send(encode_client(&ClientMessage::Ping).as_bytes());
+        let _ = game
+            .network
+            .socket
+            .send(encode_client(&ClientMessage::Ping).as_bytes());
         game.network.last_ping = Instant::now();
     }
     if is_key_pressed(KeyCode::Escape) {
-        let _ = game.network.socket.send(encode_client(&ClientMessage::Leave).as_bytes());
+        let _ = game
+            .network
+            .socket
+            .send(encode_client(&ClientMessage::Leave).as_bytes());
         return AppScreen::Connect(ConnectScreen {
             server: DEFAULT_SERVER.to_string(),
             username: "Agent".to_string(),
@@ -317,7 +401,11 @@ fn update_game(mut game: GameState) -> AppScreen {
 
     for message in poll_network(&game.network.socket) {
         match message {
-            ServerMessage::State { tick, level, players } => {
+            ServerMessage::State {
+                tick,
+                level,
+                players,
+            } => {
                 if tick < game.last_server_tick {
                     continue;
                 }
@@ -341,7 +429,9 @@ fn update_game(mut game: GameState) -> AppScreen {
                             game.x += error_x * 0.12;
                             game.y += error_y * 0.12;
                         }
-                        game.angle = normalize_angle(game.angle + normalize_angle(player.angle - game.angle) * 0.08);
+                        game.angle = normalize_angle(
+                            game.angle + normalize_angle(player.angle - game.angle) * 0.08,
+                        );
                     } else {
                         seen.push(player.id);
                         game.remotes
@@ -389,7 +479,13 @@ fn update_game(mut game: GameState) -> AppScreen {
 fn update_editor(mut editor: EditorState) -> AppScreen {
     clear_background(Color::new(0.012, 0.018, 0.025, 1.0));
     draw_text("LEVEL EDITOR", 42.0, 54.0, 38.0, WHITE);
-    draw_text("Bonus: editable mazes + procedural DFS generator", 44.0, 82.0, 18.0, SKYBLUE);
+    draw_text(
+        "Bonus: editable mazes + procedural DFS generator",
+        44.0,
+        82.0,
+        18.0,
+        SKYBLUE,
+    );
 
     let top = 110.0;
     let left = 42.0;
@@ -411,7 +507,11 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
                 rect.y,
                 rect.w - 1.0,
                 rect.h - 1.0,
-                if wall { Color::new(0.65, 0.75, 0.78, 1.0) } else { Color::new(0.035, 0.06, 0.07, 1.0) },
+                if wall {
+                    Color::new(0.65, 0.75, 0.78, 1.0)
+                } else {
+                    Color::new(0.035, 0.06, 0.07, 1.0)
+                },
             );
         }
     }
@@ -427,7 +527,10 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
 
     let button_y = screen_height() - 86.0;
     let generate = draw_button(Rect::new(42.0, button_y, 150.0, 46.0), "GENERATE [G]");
-    let size = draw_button(Rect::new(204.0, button_y, 150.0, 46.0), &format!("SIZE {}", editor.generation_size));
+    let size = draw_button(
+        Rect::new(204.0, button_y, 150.0, 46.0),
+        &format!("SIZE {}", editor.generation_size),
+    );
     let save = draw_button(Rect::new(366.0, button_y, 130.0, 46.0), "SAVE [S]");
     let load = draw_button(Rect::new(508.0, button_y, 130.0, 46.0), "LOAD [L]");
     let back = draw_button(Rect::new(650.0, button_y, 130.0, 46.0), "BACK [ESC]");
@@ -448,7 +551,10 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
             21 => 27,
             _ => 15,
         };
-        editor.status = format!("Generator size set to {}x{}.", editor.generation_size, editor.generation_size);
+        editor.status = format!(
+            "Generator size set to {}x{}.",
+            editor.generation_size, editor.generation_size
+        );
     }
     if save || is_key_pressed(KeyCode::S) {
         editor.status = match serde_json::to_string_pretty(&editor.maze)
@@ -473,7 +579,13 @@ fn update_editor(mut editor: EditorState) -> AppScreen {
         };
     }
 
-    draw_text(&editor.status, 810.0.min(screen_width() - 400.0), button_y + 30.0, 18.0, LIGHTGRAY);
+    draw_text(
+        &editor.status,
+        810.0_f32.min(screen_width() - 400.0),
+        button_y + 30.0,
+        18.0,
+        LIGHTGRAY,
+    );
 
     if back || is_key_pressed(KeyCode::Escape) {
         let hosts = load_hosts();
@@ -500,7 +612,13 @@ fn draw_game(game: &GameState) {
     let sw = screen_width();
     let sh = screen_height();
     draw_rectangle(0.0, 0.0, sw, sh * 0.5, Color::new(0.02, 0.04, 0.07, 1.0));
-    draw_rectangle(0.0, sh * 0.5, sw, sh * 0.5, Color::new(0.025, 0.025, 0.03, 1.0));
+    draw_rectangle(
+        0.0,
+        sh * 0.5,
+        sw,
+        sh * 0.5,
+        Color::new(0.025, 0.025, 0.03, 1.0),
+    );
 
     let ray_count = ((sw / 2.0) as usize).clamp(240, 800);
     let stripe_width = sw / ray_count as f32 + 0.6;
@@ -528,7 +646,13 @@ fn draw_game(game: &GameState) {
     draw_remote_players(game, &z_buffer, ray_count);
 
     if game.shot_flash > 0.0 {
-        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.9, 0.95, 1.0, (game.shot_flash * 1.4).min(0.14)));
+        draw_rectangle(
+            0.0,
+            0.0,
+            sw,
+            sh,
+            Color::new(0.9, 0.95, 1.0, (game.shot_flash * 1.4).min(0.14)),
+        );
     }
 
     draw_crosshair(sw * 0.5, sh * 0.5);
@@ -539,7 +663,11 @@ fn draw_game(game: &GameState) {
 fn draw_remote_players(game: &GameState, z_buffer: &[f32], ray_count: usize) {
     let sw = screen_width();
     let sh = screen_height();
-    let mut visuals: Vec<&RemoteVisual> = game.remotes.values().filter(|visual| visual.state.health > 0).collect();
+    let mut visuals: Vec<&RemoteVisual> = game
+        .remotes
+        .values()
+        .filter(|visual| visual.state.health > 0)
+        .collect();
     visuals.sort_by(|left, right| {
         let dl = squared_distance((game.x, game.y), (left.display_x, left.display_y));
         let dr = squared_distance((game.x, game.y), (right.display_x, right.display_y));
@@ -556,13 +684,20 @@ fn draw_remote_players(game: &GameState, z_buffer: &[f32], ray_count: usize) {
         }
         let screen_x = sw * 0.5 + (relative / (FOV * 0.5)) * sw * 0.5;
         let ray_index = ((screen_x / sw) * ray_count as f32).floor() as isize;
-        if ray_index < 0 || ray_index >= ray_count as isize || distance > z_buffer[ray_index as usize] + 0.25 {
+        if ray_index < 0
+            || ray_index >= ray_count as isize
+            || distance > z_buffer[ray_index as usize] + 0.25
+        {
             continue;
         }
 
         let size = (sh * 0.64 / distance).clamp(18.0, sh * 0.55);
         let cy = sh * 0.5;
-        let eye = if visual.state.bot { Color::new(0.94, 0.84, 0.7, 1.0) } else { WHITE };
+        let eye = if visual.state.bot {
+            Color::new(0.94, 0.84, 0.7, 1.0)
+        } else {
+            WHITE
+        };
         draw_circle(screen_x, cy, size * 0.38, eye);
         draw_circle_lines(screen_x, cy, size * 0.38, (size * 0.035).max(2.0), BLACK);
         draw_circle(screen_x, cy, size * 0.15, Color::new(0.2, 0.75, 0.85, 1.0));
@@ -596,7 +731,13 @@ fn draw_minimap(game: &GameState, maze: &Maze) {
     let left = 18.0;
     let top = 18.0;
 
-    draw_rectangle(left - 8.0, top - 8.0, width + 16.0, height + 16.0, Color::new(0.0, 0.0, 0.0, 0.72));
+    draw_rectangle(
+        left - 8.0,
+        top - 8.0,
+        width + 16.0,
+        height + 16.0,
+        Color::new(0.0, 0.0, 0.0, 0.72),
+    );
     for y in 0..maze.height {
         for x in 0..maze.width {
             if maze.cells[y * maze.width + x] != 0 {
@@ -611,7 +752,11 @@ fn draw_minimap(game: &GameState, maze: &Maze) {
         }
     }
 
-    for visual in game.remotes.values().filter(|visual| visual.state.health > 0) {
+    for visual in game
+        .remotes
+        .values()
+        .filter(|visual| visual.state.health > 0)
+    {
         draw_circle(
             left + visual.display_x * cell,
             top + visual.display_y * cell,
@@ -626,7 +771,12 @@ fn draw_minimap(game: &GameState, maze: &Maze) {
     let right = vec2(-dir.y, dir.x);
     let tip = vec2(px, py) + dir * (cell * 0.75);
     let base = vec2(px, py) - dir * (cell * 0.42);
-    draw_triangle(tip, base + right * cell * 0.42, base - right * cell * 0.42, YELLOW);
+    draw_triangle(
+        tip,
+        base + right * cell * 0.42,
+        base - right * cell * 0.42,
+        YELLOW,
+    );
 }
 
 fn draw_hud(game: &GameState, maze: &Maze) {
@@ -634,19 +784,49 @@ fn draw_hud(game: &GameState, maze: &Maze) {
     let fps = get_fps();
     let fps_color = if fps >= 50 { GREEN } else { RED };
     let x = sw - 280.0;
-    draw_rectangle(x - 16.0, 16.0, 264.0, 154.0, Color::new(0.0, 0.0, 0.0, 0.62));
-    draw_text(&format!("FPS {:>3}", fps), x, 48.0, 28.0, fps_color);
-    draw_text(&format!("HP  {:>3}", game.health), x, 78.0, 24.0, WHITE);
-    draw_text(&format!("SCORE {}", game.score), x, 106.0, 24.0, WHITE);
-    draw_text(&format!("LEVEL {} / 3", game.level_index + 1), x, 134.0, 21.0, SKYBLUE);
-    draw_text(&format!("DEAD ENDS {}", maze.dead_ends()), x, 158.0, 18.0, GRAY);
+    draw_rectangle(
+        x - 16.0,
+        16.0,
+        264.0,
+        154.0,
+        Color::new(0.0, 0.0, 0.0, 0.62),
+    );
+    draw_text(format!("FPS {:>3}", fps), x, 48.0, 28.0, fps_color);
+    draw_text(format!("HP  {:>3}", game.health), x, 78.0, 24.0, WHITE);
+    draw_text(format!("SCORE {}", game.score), x, 106.0, 24.0, WHITE);
+    draw_text(
+        format!("LEVEL {} / 3", game.level_index + 1),
+        x,
+        134.0,
+        21.0,
+        SKYBLUE,
+    );
+    draw_text(
+        format!("DEAD ENDS {}", maze.dead_ends()),
+        x,
+        158.0,
+        18.0,
+        GRAY,
+    );
 
     let bottom = screen_height() - 24.0;
-    draw_text("WASD move  Q/E or arrows turn  SPACE shoot  N next level  ESC disconnect", 18.0, bottom, 18.0, LIGHTGRAY);
+    draw_text(
+        "WASD move  Q/E or arrows turn  SPACE shoot  N next level  ESC disconnect",
+        18.0,
+        bottom,
+        18.0,
+        LIGHTGRAY,
+    );
     if game.health == 0 {
         let text = "ELIMINATED — respawning...";
         let m = measure_text(text, None, 34, 1.0);
-        draw_text(text, screen_width() * 0.5 - m.width * 0.5, screen_height() * 0.66, 34.0, RED);
+        draw_text(
+            text,
+            screen_width() * 0.5 - m.width * 0.5,
+            screen_height() * 0.66,
+            34.0,
+            RED,
+        );
     }
 }
 
@@ -664,7 +844,14 @@ fn draw_connect_background() {
         let t = i as f32 / 24.0;
         let x = sw * (0.58 + t * 0.42);
         let perspective = 1.0 - t * 0.85;
-        draw_line(x, 0.0, x - 180.0 * perspective, sh, 1.0, Color::new(0.04, 0.23, 0.28, 0.45));
+        draw_line(
+            x,
+            0.0,
+            x - 180.0 * perspective,
+            sh,
+            1.0,
+            Color::new(0.04, 0.23, 0.28, 0.45),
+        );
     }
     for i in 0..16 {
         let y = i as f32 / 16.0 * sh;
@@ -673,11 +860,40 @@ fn draw_connect_background() {
 }
 
 fn draw_field(label: &str, value: &str, rect: Rect, active: bool) {
-    draw_text(label, rect.x, rect.y - 8.0, 17.0, if active { SKYBLUE } else { GRAY });
-    draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.01, 0.018, 0.025, 1.0));
-    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, if active { 2.0 } else { 1.0 }, if active { SKYBLUE } else { DARKGRAY });
-    let cursor = if active && ((get_time() * 2.0) as i32 % 2 == 0) { "_" } else { "" };
-    draw_text(&format!("{value}{cursor}"), rect.x + 14.0, rect.y + 34.0, 24.0, WHITE);
+    draw_text(
+        label,
+        rect.x,
+        rect.y - 8.0,
+        17.0,
+        if active { SKYBLUE } else { GRAY },
+    );
+    draw_rectangle(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        Color::new(0.01, 0.018, 0.025, 1.0),
+    );
+    draw_rectangle_lines(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        if active { 2.0 } else { 1.0 },
+        if active { SKYBLUE } else { DARKGRAY },
+    );
+    let cursor = if active && ((get_time() * 2.0) as i32 % 2 == 0) {
+        "_"
+    } else {
+        ""
+    };
+    draw_text(
+        format!("{value}{cursor}"),
+        rect.x + 14.0,
+        rect.y + 34.0,
+        24.0,
+        WHITE,
+    );
 }
 
 fn draw_button(rect: Rect, label: &str) -> bool {
@@ -687,11 +903,28 @@ fn draw_button(rect: Rect, label: &str) -> bool {
         rect.y,
         rect.w,
         rect.h,
-        if hover { Color::new(0.08, 0.34, 0.38, 1.0) } else { Color::new(0.04, 0.20, 0.24, 1.0) },
+        if hover {
+            Color::new(0.08, 0.34, 0.38, 1.0)
+        } else {
+            Color::new(0.04, 0.20, 0.24, 1.0)
+        },
     );
-    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.5, Color::new(0.25, 0.78, 0.84, 0.9));
+    draw_rectangle_lines(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        1.5,
+        Color::new(0.25, 0.78, 0.84, 0.9),
+    );
     let m = measure_text(label, None, 20, 1.0);
-    draw_text(label, rect.x + (rect.w - m.width) * 0.5, rect.y + rect.h * 0.63, 20.0, WHITE);
+    draw_text(
+        label,
+        rect.x + (rect.w - m.width) * 0.5,
+        rect.y + rect.h * 0.63,
+        20.0,
+        WHITE,
+    );
     hover && is_mouse_button_pressed(MouseButton::Left)
 }
 
@@ -755,7 +988,10 @@ fn clicked(rect: Rect) -> bool {
 }
 
 fn point_in_rect(point: (f32, f32), rect: Rect) -> bool {
-    point.0 >= rect.x && point.0 <= rect.x + rect.w && point.1 >= rect.y && point.1 <= rect.y + rect.h
+    point.0 >= rect.x
+        && point.0 <= rect.x + rect.w
+        && point.1 >= rect.y
+        && point.1 <= rect.y + rect.h
 }
 
 fn load_hosts() -> Vec<HostEntry> {

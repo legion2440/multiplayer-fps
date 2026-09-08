@@ -85,7 +85,9 @@ pub fn encode_client(message: &ClientMessage) -> String {
 pub fn parse_client(input: &str) -> Option<ClientMessage> {
     let parts: Vec<&str> = input.trim().split('|').collect();
     match parts.first().copied()? {
-        "JOIN" => Some(ClientMessage::Join(sanitize_username(parts.get(1).copied().unwrap_or("Agent")))),
+        "JOIN" => Some(ClientMessage::Join(sanitize_username(
+            parts.get(1).copied().unwrap_or("Agent"),
+        ))),
         "INPUT" if parts.len() >= 5 => Some(ClientMessage::Input {
             seq: parts[1].parse().ok()?,
             forward: parts[2].parse::<f32>().ok()?.clamp(-1.0, 1.0),
@@ -169,7 +171,11 @@ pub fn parse_server(input: &str) -> Option<ServerMessage> {
                     bot: fields[7] == "1",
                 });
             }
-            Some(ServerMessage::State { tick, level, players })
+            Some(ServerMessage::State {
+                tick,
+                level,
+                players,
+            })
         }
         "SHOT" if parts.len() >= 3 => {
             let shooter = parts[1].parse().ok()?;
@@ -181,7 +187,9 @@ pub fn parse_server(input: &str) -> Option<ServerMessage> {
         }
         "LEVEL" if parts.len() >= 2 => Some(ServerMessage::Level(parts[1].parse().ok()?)),
         "PONG" => Some(ServerMessage::Pong),
-        "REJECT" => Some(ServerMessage::Reject(parts.get(1).copied().unwrap_or("Rejected").to_string())),
+        "REJECT" => Some(ServerMessage::Reject(
+            parts.get(1).copied().unwrap_or("Rejected").to_string(),
+        )),
         _ => None,
     }
 }
@@ -199,7 +207,12 @@ mod tests {
             turn: 0.25,
         });
         match parse_client(&encoded).unwrap() {
-            ClientMessage::Input { seq, forward, strafe, turn } => {
+            ClientMessage::Input {
+                seq,
+                forward,
+                strafe,
+                turn,
+            } => {
                 assert_eq!(seq, 7);
                 assert_eq!(forward, 1.0);
                 assert_eq!(strafe, -0.5);

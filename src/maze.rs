@@ -30,7 +30,11 @@ struct XorShift64 {
 impl XorShift64 {
     fn new(seed: u64) -> Self {
         Self {
-            state: if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed },
+            state: if seed == 0 {
+                0x9E37_79B9_7F4A_7C15
+            } else {
+                seed
+            },
         }
     }
 
@@ -73,11 +77,7 @@ impl Maze {
             for (dx, dy) in [(2isize, 0isize), (-2, 0), (0, 2), (0, -2)] {
                 let nx = cx as isize + dx;
                 let ny = cy as isize + dy;
-                if nx <= 0
-                    || ny <= 0
-                    || nx >= width as isize - 1
-                    || ny >= height as isize - 1
-                {
+                if nx <= 0 || ny <= 0 || nx >= width as isize - 1 || ny >= height as isize - 1 {
                     continue;
                 }
                 let nx = nx as usize;
@@ -344,8 +344,20 @@ impl Maze {
 
 pub fn builtin_levels() -> Vec<Maze> {
     let specs = [
-        ("Sector 01: Training Quarters", "Novice", 15usize, 15usize, 0xA11CEu64),
-        ("Sector 02: Quarantine Vault", "Intermediate", 21, 21, 0xBADC0DE),
+        (
+            "Sector 01: Training Quarters",
+            "Novice",
+            15usize,
+            15usize,
+            0xA11CEu64,
+        ),
+        (
+            "Sector 02: Quarantine Vault",
+            "Intermediate",
+            21,
+            21,
+            0xBADC0DE,
+        ),
         ("Sector 03: The Void Labyrinth", "Master", 27, 27, 0xC0FFEE),
     ];
     let mut levels = Vec::with_capacity(specs.len());
@@ -360,13 +372,15 @@ pub fn builtin_levels() -> Vec<Maze> {
                 break;
             }
         }
-        let maze = chosen.unwrap_or_else(|| Maze::generated(name, difficulty, width, height, base_seed));
+        let maze =
+            chosen.unwrap_or_else(|| Maze::generated(name, difficulty, width, height, base_seed));
         previous_dead_ends = maze.dead_ends();
         levels.push(maze);
     }
     levels
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn move_entity(
     maze: &Maze,
     x: &mut f32,
@@ -378,10 +392,8 @@ pub fn move_entity(
     dt: f32,
 ) {
     *angle = normalize_angle(*angle + turn.clamp(-1.0, 1.0) * TURN_SPEED * dt);
-    let mut mx = angle.cos() * forward.clamp(-1.0, 1.0)
-        - angle.sin() * strafe.clamp(-1.0, 1.0);
-    let mut my = angle.sin() * forward.clamp(-1.0, 1.0)
-        + angle.cos() * strafe.clamp(-1.0, 1.0);
+    let mut mx = angle.cos() * forward.clamp(-1.0, 1.0) - angle.sin() * strafe.clamp(-1.0, 1.0);
+    let mut my = angle.sin() * forward.clamp(-1.0, 1.0) + angle.cos() * strafe.clamp(-1.0, 1.0);
     let len = (mx * mx + my * my).sqrt();
     if len > 1.0 {
         mx /= len;
@@ -426,7 +438,11 @@ pub fn normalize_angle(mut angle: f32) -> f32 {
 
 fn normalize_size(size: usize) -> usize {
     let size = size.max(7);
-    if size % 2 == 0 { size + 1 } else { size }
+    if size.is_multiple_of(2) {
+        size + 1
+    } else {
+        size
+    }
 }
 
 #[cfg(test)]

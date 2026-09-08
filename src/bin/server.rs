@@ -77,7 +77,12 @@ fn main() -> io::Result<()> {
     let mut address_to_id: HashMap<SocketAddr, u32> = HashMap::new();
     let mut next_id = 1u32;
 
-    add_bots(&mut players, config.bots, &levels[level_index], &mut next_id);
+    add_bots(
+        &mut players,
+        config.bots,
+        &levels[level_index],
+        &mut next_id,
+    );
 
     println!("Maze Wars UDP server");
     println!("  bind: {}", config.bind);
@@ -122,10 +127,14 @@ fn main() -> io::Result<()> {
         remove_timed_out(&mut players, &mut address_to_id);
         update_respawns(&mut players, &levels[level_index], tick);
         update_bots(&mut players, &levels[level_index], now, tick);
-        update_humans(&mut players, &levels[level_index], tick_duration.as_secs_f32());
+        update_humans(
+            &mut players,
+            &levels[level_index],
+            tick_duration.as_secs_f32(),
+        );
         process_shots(&socket, &mut players, &levels[level_index]);
 
-        if tick % SNAPSHOT_EVERY_TICKS == 0 {
+        if tick.is_multiple_of(SNAPSHOT_EVERY_TICKS) {
             broadcast_state(&socket, &players, tick, level_index);
         }
     }
@@ -201,7 +210,10 @@ fn receive_packets(
                 };
                 players.insert(id, player);
                 address_to_id.insert(source, id);
-                let _ = socket.send_to(welcome(id, *level_index, spawn.0, spawn.1).as_bytes(), source);
+                let _ = socket.send_to(
+                    welcome(id, *level_index, spawn.0, spawn.1).as_bytes(),
+                    source,
+                );
                 println!("[join] {name} from {source} as #{id}");
             }
             ClientMessage::Input {
@@ -234,8 +246,7 @@ fn receive_packets(
                 let _ = socket.send_to(pong().as_bytes(), source);
             }
             ClientMessage::NextLevel => {
-                if address_to_id.contains_key(&source)
-                    && Instant::now() >= *level_change_allowed_at
+                if address_to_id.contains_key(&source) && Instant::now() >= *level_change_allowed_at
                 {
                     *level_index = (*level_index + 1) % levels.len();
                     reset_for_level(players, &levels[*level_index]);
@@ -346,7 +357,7 @@ fn update_bots(players: &mut HashMap<u32, Player>, maze: &Maze, now: Instant, ti
             }
             if angle_error.abs() < 0.12 && now >= bot.ai_shot_at {
                 bot.shoot_requested = true;
-                let jitter = ((bot.id as u64 * 17 + tick) % 7) as u64;
+                let jitter = (bot.id as u64 * 17 + tick) % 7;
                 bot.ai_shot_at = now + Duration::from_millis(650 + jitter * 45);
             }
         } else {
@@ -380,8 +391,9 @@ fn update_bots(players: &mut HashMap<u32, Player>, maze: &Maze, now: Instant, ti
 fn process_shots(socket: &UdpSocket, players: &mut HashMap<u32, Player>, maze: &Maze) {
     let shooters: Vec<u32> = players
         .values_mut()
-        .filter(|player| player.health > 0 && std::mem::take(&mut player.shoot_requested))
-        .map(|player| player.id)
+        .filter_map(|player| {
+            (player.health > 0 && std::mem::take(&mut player.shoot_requested)).then_some(player.id)
+        })
         .collect();
 
     for shooter_id in shooters {
@@ -430,9 +442,7 @@ fn update_respawns(players: &mut HashMap<u32, Player>, maze: &Maze, tick: u64) {
     let now = Instant::now();
     let due: Vec<u32> = players
         .values()
-        .filter(|player| {
-            player.health == 0 && player.respawn_at.is_some_and(|at| now >= at)
-        })
+        .filter(|player| player.health == 0 && player.respawn_at.is_some_and(|at| now >= at))
         .map(|player| player.id)
         .collect();
     for id in due {
@@ -468,12 +478,7 @@ fn remove_timed_out(
     }
 }
 
-fn add_bots(
-    players: &mut HashMap<u32, Player>,
-    count: usize,
-    maze: &Maze,
-    next_id: &mut u32,
-) {
+fn add_bots(players: &mut HashMap<u32, Player>, count: usize, maze: &Maze, next_id: &mut u32) {
     for index in 0..count {
         let id = *next_id;
         *next_id = next_id.wrapping_add(1).max(1);
@@ -496,8 +501,7 @@ fn add_bots(
                 bot: true,
                 ai_waypoint: None,
                 ai_repath_at: Instant::now(),
-                ai_shot_at: Instant::now()
-                    + Duration::from_millis(700 + 120 * index as u64),
+                ai_shot_at: Instant::now() + Duration::from_millis(700 + 120 * index as u64),
             },
         );
     }
@@ -524,12 +528,7 @@ fn spawn_for_slot(maze: &Maze, slot: usize) -> (f32, f32) {
     spawns[slot % spawns.len()]
 }
 
-fn broadcast_state(
-    socket: &UdpSocket,
-    players: &HashMap<u32, Player>,
-    tick: u64,
-    level: usize,
-) {
+fn broadcast_state(socket: &UdpSocket, players: &HashMap<u32, Player>, tick: u64, level: usize) {
     let packet = state(tick, level, players.values().map(Player::net_state));
     broadcast_raw(socket, players, &packet);
 }
@@ -567,11 +566,7 @@ fn parse_args() -> Config {
             }
             "--level" => {
                 if let Some(value) = args.next() {
-                    config.level = value
-                        .parse::<usize>()
-                        .unwrap_or(1)
-                        .saturating_sub(1)
-                        .min(2);
+                    config.level = value.parse::<usize>().unwrap_or(1).saturating_sub(1).min(2);
                 }
             }
             "--help" | "-h" => {
