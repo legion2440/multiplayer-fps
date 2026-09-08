@@ -40,6 +40,10 @@ jobs:
               if marker not in client:
                   raise SystemExit('client insertion marker not found')
               client = client.replace(marker, compat + '\n' + marker, 1)
+          client = client.replace(
+              'draw_dark_button(gateway, shorten(&gateway_text, 20), false);',
+              'draw_dark_button(gateway, &shorten(&gateway_text, 20), false);',
+          )
           client_path.write_text(client)
 
           maze_path = Path('src/maze.rs')
