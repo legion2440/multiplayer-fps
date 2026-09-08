@@ -10,6 +10,7 @@ pub enum ClientMessage {
     Shoot(u32),
     Ping,
     NextLevel,
+    SetLevel(usize),
     Leave,
 }
 
@@ -78,6 +79,7 @@ pub fn encode_client(message: &ClientMessage) -> String {
         ClientMessage::Shoot(seq) => format!("SHOOT|{}\n", seq),
         ClientMessage::Ping => "PING\n".to_string(),
         ClientMessage::NextLevel => "NEXT\n".to_string(),
+        ClientMessage::SetLevel(level) => format!("SETLEVEL|{}\n", level),
         ClientMessage::Leave => "LEAVE\n".to_string(),
     }
 }
@@ -97,6 +99,7 @@ pub fn parse_client(input: &str) -> Option<ClientMessage> {
         "SHOOT" => Some(ClientMessage::Shoot(parts.get(1)?.parse().ok()?)),
         "PING" => Some(ClientMessage::Ping),
         "NEXT" => Some(ClientMessage::NextLevel),
+        "SETLEVEL" => Some(ClientMessage::SetLevel(parts.get(1)?.parse().ok()?)),
         "LEAVE" => Some(ClientMessage::Leave),
         _ => None,
     }
@@ -218,6 +221,15 @@ mod tests {
                 assert_eq!(strafe, -0.5);
                 assert_eq!(turn, 0.25);
             }
+            other => panic!("unexpected message: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn protocol_round_trips_level_selection() {
+        let encoded = encode_client(&ClientMessage::SetLevel(2));
+        match parse_client(&encoded).unwrap() {
+            ClientMessage::SetLevel(level) => assert_eq!(level, 2),
             other => panic!("unexpected message: {other:?}"),
         }
     }
