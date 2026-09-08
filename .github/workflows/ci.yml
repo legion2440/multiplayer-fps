@@ -23,6 +23,8 @@ jobs:
         run: cargo check --all-targets --locked
       - name: Test library
         run: cargo test --lib --locked
+      - name: UDP integration (10 clients)
+        run: cargo test --test network --locked
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Build release binaries
