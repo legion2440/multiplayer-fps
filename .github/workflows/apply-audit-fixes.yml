@@ -1,105 +1,10 @@
 name: Apply validated audit fixes
 
 on:
-  push:
-    paths:
-      - .github/workflows/apply-audit-fixes.yml
-
-permissions:
-  contents: write
+  workflow_dispatch:
 
 jobs:
-  apply:
+  noop:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Apply validated fixes
-        shell: python
-        run: |
-          from pathlib import Path
-
-          cargo = Path('Cargo.toml').read_text()
-          if 'rust-version' not in cargo:
-              cargo = cargo.replace('edition = "2021"\n', 'edition = "2021"\nrust-version = "1.87"\n')
-          cargo = cargo.replace('macroquad = "0.4.14"', 'macroquad = "=0.4.16"')
-          Path('Cargo.toml').write_text(cargo)
-
-          server_path = Path('src/bin/server.rs')
-          server = server_path.read_text()
-          duplicate_start = server.find('                if players\n                    .values()\n                    .any(|player| player.name.eq_ignore_ascii_case(&name))')
-          if duplicate_start != -1:
-              duplicate_end = server.find('                let id = *next_id;', duplicate_start)
-              if duplicate_end == -1:
-                  raise SystemExit('duplicate-name block end not found')
-              server = server[:duplicate_start] + server[duplicate_end:]
-          server_path.write_text(server)
-
-          client_path = Path('src/bin/client.rs')
-          client = client_path.read_text()
-          client = client.replace(
-              'struct GameState {\n    network: NetworkClient,',
-              'struct GameState {\n    server: String,\n    username: String,\n    network: NetworkClient,'
-          )
-          client = client.replace(
-              '    status: String,\n}',
-              '    status: String,\n    display_fps: f32,\n}',
-              1
-          )
-          client = client.replace(
-              '            return AppScreen::Game(GameState {\n                network: pending.network,',
-              '            return AppScreen::Game(GameState {\n                server: screen.server.clone(),\n                username: screen.username.clone(),\n                network: pending.network,'
-          )
-          client = client.replace(
-              '                status: "Connected".to_string(),\n            });',
-              '                status: "Connected".to_string(),\n                display_fps: 60.0,\n            });'
-          )
-          client = client.replace(
-              'fn update_game(mut game: GameState) -> AppScreen {\n    let dt = get_frame_time().min(0.05);',
-              'fn update_game(mut game: GameState) -> AppScreen {\n    let dt = get_frame_time().min(0.05);\n    let instant_fps = 1.0 / dt.max(0.0001);\n    let fps_alpha = 1.0 - (-dt / 0.5).exp();\n    game.display_fps += (instant_fps - game.display_fps) * fps_alpha;'
-          )
-          client = client.replace(
-              '            server: DEFAULT_SERVER.to_string(),\n            username: "Agent".to_string(),',
-              '            server: game.server.clone(),\n            username: game.username.clone(),'
-          )
-          client = client.replace(
-              '    let fps = get_fps();',
-              '    let fps = game.display_fps.round() as i32;'
-          )
-          old_connect = '''fn start_connection(server: &str, username: &str) -> io::Result<NetworkClient> {\n    let socket = UdpSocket::bind("0.0.0.0:0")?;\n    socket.connect(server.trim())?;'''
-          new_connect = '''fn start_connection(server: &str, username: &str) -> io::Result<NetworkClient> {\n    let socket = UdpSocket::bind("0.0.0.0:0")?;\n    let server = server.trim();\n    let endpoint = if server.parse::<std::net::IpAddr>().is_ok() {\n        format!("{server}:34254")\n    } else {\n        server.to_string()\n    };\n    socket.connect(&endpoint)?;'''
-          if old_connect not in client:
-              raise SystemExit('start_connection pattern not found')
-          client = client.replace(old_connect, new_connect)
-          client_path.write_text(client)
-
-          for path in [Path('README.md'), Path('PROTOCOL.md'), *Path('src').rglob('*.rs')]:
-              path.write_text(path.read_text().replace('—', '-').replace('–', '-'))
-
-          network_path = Path('tests/network.rs')
-          network = network_path.read_text().replace(
-              '            .send(format!("JOIN|audit_{index}\\n").as_bytes())',
-              '            .send(b"JOIN|Agent\\n")'
-          )
-          network_path.write_text(network)
-
-      - name: Format Rust
-        run: cargo fmt --all
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Generate frontend lockfile
-        working-directory: frontend
-        run: npm install --package-lock-only
-
-      - name: Commit non-workflow fixes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml README.md PROTOCOL.md src tests frontend/package-lock.json
-          git commit -m "fix: address audit feedback after frontend port"
-          git push origin HEAD:main
+      - run: echo "Audit fixes already applied."
