@@ -1,5 +1,5 @@
 name: Native Windows fullscreen fix
-# retry after correcting Cargo marker
+# retry with lockfile synchronization
 
 on:
   push:
@@ -27,6 +27,8 @@ jobs:
           components: rustfmt, clippy
       - uses: dtolnay/rust-toolchain@1.74.0
 
+      - name: Sync lockfile
+        run: cargo +1.74.0 check --all-targets
       - name: Format
         run: cargo +stable fmt --all
       - name: Rust 1.74 check
@@ -48,6 +50,6 @@ jobs:
           rm .github/scripts/fix_native_win.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml src/bin/client.rs .github/workflows/native-win-fullscreen.yml .github/scripts/fix_native_win.py
+          git add Cargo.toml Cargo.lock src/bin/client.rs .github/workflows/native-win-fullscreen.yml .github/scripts/fix_native_win.py
           git commit -m "fix: enforce native Windows fullscreen"
           git push origin HEAD:main
