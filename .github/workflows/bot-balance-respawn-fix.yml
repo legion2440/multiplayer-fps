@@ -1,0 +1,332 @@
+name: Bot balance and respawn fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/bot-balance-respawn-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          server_path = Path('src/bin/server.rs')
+          server = server_path.read_text()
+
+          old = '''#[derive(Debug)]
+          struct Config {
+              bind: String,
+              bots: usize,
+              level: usize,
+          }
+          '''
+          new = '''#[derive(Debug)]
+          struct Config {
+              bind: String,
+              bots: usize,
+              level: usize,
+          }
+
+          #[derive(Debug, Clone, Copy)]
+          struct BotTuning {
+              chase_speed: f32,
+              path_speed: f32,
+              turn_step: f32,
+              path_turn_step: f32,
+              fire_angle: f32,
+              shot_base_ms: u64,
+              shot_jitter_ms: u64,
+              repath_ms: u64,
+          }
+
+          fn bot_tuning(level_index: usize) -> BotTuning {
+              match level_index {
+                  0 => BotTuning {
+                      chase_speed: 0.45,
+                      path_speed: 0.50,
+                      turn_step: 0.024,
+                      path_turn_step: 0.032,
+                      fire_angle: 0.08,
+                      shot_base_ms: 1_600,
+                      shot_jitter_ms: 120,
+                      repath_ms: 350,
+                  },
+                  2 => BotTuning {
+                      chase_speed: 0.72,
+                      path_speed: 0.75,
+                      turn_step: 0.055,
+                      path_turn_step: 0.075,
+                      fire_angle: 0.12,
+                      shot_base_ms: 650,
+                      shot_jitter_ms: 45,
+                      repath_ms: 180,
+                  },
+                  _ => BotTuning {
+                      chase_speed: 0.60,
+                      path_speed: 0.64,
+                      turn_step: 0.038,
+                      path_turn_step: 0.052,
+                      fire_angle: 0.10,
+                      shot_base_ms: 1_000,
+                      shot_jitter_ms: 75,
+                      repath_ms: 240,
+                  },
+              }
+          }
+          '''
+          if old not in server:
+              raise SystemExit('Config marker not found')
+          server = server.replace(old, new, 1)
+
+          old = '''        update_respawns(&mut players, &levels[level_index], tick);
+                  update_bots(&mut players, &levels[level_index], now, tick);
+          '''
+          new = '''        update_respawns(&mut players, &levels[level_index], level_index, tick);
+                  update_bots(&mut players, &levels[level_index], level_index, now, tick);
+          '''
+          if old not in server:
+              raise SystemExit('main update marker not found')
+          server = server.replace(old, new, 1)
+
+          server = server.replace(
+              'reset_for_level(players, &levels[CUSTOM_INDEX]);',
+              'reset_for_level(players, &levels[CUSTOM_INDEX], CUSTOM_INDEX);',
+          )
+          server = server.replace(
+              'reset_for_level(players, &levels[*level_index]);',
+              'reset_for_level(players, &levels[*level_index], *level_index);',
+          )
+
+          old = '''fn update_bots(players: &mut HashMap<u32, Player>, maze: &Maze, now: Instant, tick: u64) {
+              let humans: Vec<(u32, f32, f32)> = players
+          '''
+          new = '''fn update_bots(
+              players: &mut HashMap<u32, Player>,
+              maze: &Maze,
+              level_index: usize,
+              now: Instant,
+              tick: u64,
+          ) {
+              let tuning = bot_tuning(level_index);
+              let humans: Vec<(u32, f32, f32)> = players
+          '''
+          if old not in server:
+              raise SystemExit('update_bots signature marker not found')
+          server = server.replace(old, new, 1)
+
+          replacements = {
+              'angle_error.clamp(-0.055, 0.055)': 'angle_error.clamp(-tuning.turn_step, tuning.turn_step)',
+              '''                    0.72,
+                              0.0,
+                              0.0,
+          ''': '''                    tuning.chase_speed,
+                              0.0,
+                              0.0,
+          ''',
+              'if angle_error.abs() < 0.12 && now >= bot.ai_shot_at {': 'if angle_error.abs() < tuning.fire_angle && now >= bot.ai_shot_at {',
+              'bot.ai_shot_at = now + Duration::from_millis(650 + jitter * 45);': 'bot.ai_shot_at = now\n                    + Duration::from_millis(tuning.shot_base_ms + jitter * tuning.shot_jitter_ms);',
+              'bot.ai_repath_at = now + Duration::from_millis(180);': 'bot.ai_repath_at = now + Duration::from_millis(tuning.repath_ms);',
+              'error.clamp(-0.075, 0.075)': 'error.clamp(-tuning.path_turn_step, tuning.path_turn_step)',
+              '''                    0.75,
+                              0.0,
+                              0.0,
+          ''': '''                    tuning.path_speed,
+                              0.0,
+                              0.0,
+          ''',
+          }
+          for old_text, new_text in replacements.items():
+              if old_text not in server:
+                  raise SystemExit(f'bot tuning marker not found: {old_text!r}')
+              server = server.replace(old_text, new_text, 1)
+
+          old = '''fn update_respawns(players: &mut HashMap<u32, Player>, maze: &Maze, tick: u64) {
+              let now = Instant::now();
+          '''
+          new = '''fn update_respawns(
+              players: &mut HashMap<u32, Player>,
+              maze: &Maze,
+              level_index: usize,
+              tick: u64,
+          ) {
+              let now = Instant::now();
+              let tuning = bot_tuning(level_index);
+          '''
+          if old not in server:
+              raise SystemExit('update_respawns signature marker not found')
+          server = server.replace(old, new, 1)
+
+          old = '''            player.input = InputState::default();
+                      player.shoot_requested = false;
+                  }
+              }
+          }
+          '''
+          new = '''            player.input = InputState::default();
+                      player.shoot_requested = false;
+                      if player.bot {
+                          player.ai_waypoint = None;
+                          player.ai_repath_at = now + Duration::from_millis(tuning.repath_ms);
+                          player.ai_shot_at = now + Duration::from_millis(tuning.shot_base_ms);
+                      }
+                  }
+              }
+          }
+          '''
+          if old not in server:
+              raise SystemExit('respawn reset marker not found')
+          server = server.replace(old, new, 1)
+
+          old = '''fn reset_for_level(players: &mut HashMap<u32, Player>, maze: &Maze) {
+              let ids: Vec<u32> = players.keys().copied().collect();
+          '''
+          new = '''fn reset_for_level(players: &mut HashMap<u32, Player>, maze: &Maze, level_index: usize) {
+              let now = Instant::now();
+              let tuning = bot_tuning(level_index);
+              let ids: Vec<u32> = players.keys().copied().collect();
+          '''
+          if old not in server:
+              raise SystemExit('reset_for_level signature marker not found')
+          server = server.replace(old, new, 1)
+
+          old = '''            player.input = InputState::default();
+                      player.ai_waypoint = None;
+                  }
+              }
+          }
+          '''
+          new = '''            player.input = InputState::default();
+                      player.ai_waypoint = None;
+                      player.shoot_requested = false;
+                      if player.bot {
+                          player.ai_repath_at = now + Duration::from_millis(tuning.repath_ms);
+                          player.ai_shot_at = now + Duration::from_millis(tuning.shot_base_ms);
+                      }
+                  }
+              }
+          }
+          '''
+          if old not in server:
+              raise SystemExit('level reset marker not found')
+          server = server.replace(old, new, 1)
+
+          server += '''
+
+          #[cfg(test)]
+          mod bot_tuning_tests {
+              use super::bot_tuning;
+
+              #[test]
+              fn difficulty_scales_from_novice_to_master() {
+                  let novice = bot_tuning(0);
+                  let intermediate = bot_tuning(1);
+                  let master = bot_tuning(2);
+
+                  assert!(novice.chase_speed < intermediate.chase_speed);
+                  assert!(intermediate.chase_speed < master.chase_speed);
+                  assert!(novice.turn_step < intermediate.turn_step);
+                  assert!(intermediate.turn_step < master.turn_step);
+                  assert!(novice.shot_base_ms > intermediate.shot_base_ms);
+                  assert!(intermediate.shot_base_ms > master.shot_base_ms);
+              }
+          }
+          '''
+          server_path.write_text(server)
+
+          client_path = Path('src/bin/client.rs')
+          client = client_path.read_text()
+          old = '''                    } else {
+                                  seen.push(player.id);
+                                  let old_health = game
+                                      .remotes
+                                      .get(&player.id)
+                                      .map(|visual| visual.state.health)
+                                      .unwrap_or(player.health);
+                                  if old_health > 0 && player.health == 0 {
+                                      deaths.push((player.id, player.name.clone()));
+                                  }
+                                  game.remotes
+                                      .entry(player.id)
+                                      .and_modify(|visual| {
+                                          visual.state = player.clone();
+                                      })
+                                      .or_insert(RemoteVisual {
+                                          display_x: player.x,
+                                          display_y: player.y,
+                                          state: player,
+                                      });
+                              }
+          '''
+          new = '''                    } else {
+                                  seen.push(player.id);
+                                  let old_health = game
+                                      .remotes
+                                      .get(&player.id)
+                                      .map(|visual| visual.state.health)
+                                      .unwrap_or(player.health);
+                                  if old_health > 0 && player.health == 0 {
+                                      deaths.push((player.id, player.name.clone()));
+                                  }
+                                  let respawned = old_health <= 0 && player.health > 0;
+                                  game.remotes
+                                      .entry(player.id)
+                                      .and_modify(|visual| {
+                                          let dx = player.x - visual.display_x;
+                                          let dy = player.y - visual.display_y;
+                                          let teleported = dx * dx + dy * dy > 1.5 * 1.5;
+                                          if respawned || teleported {
+                                              visual.display_x = player.x;
+                                              visual.display_y = player.y;
+                                          }
+                                          visual.state = player.clone();
+                                      })
+                                      .or_insert(RemoteVisual {
+                                          display_x: player.x,
+                                          display_y: player.y,
+                                          state: player,
+                                      });
+                              }
+          '''
+          if old not in client:
+              raise SystemExit('remote visual marker not found')
+          client = client.replace(old, new, 1)
+          client_path.write_text(client)
+          PY
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: dtolnay/rust-toolchain@1.74.0
+
+      - name: Format
+        run: cargo +stable fmt --all
+      - name: Rust 1.74 check
+        run: cargo +1.74.0 check --locked --all-targets
+      - name: Test
+        run: cargo +stable test --locked
+      - name: Clippy
+        run: cargo +stable clippy --all-targets --locked -- -D warnings
+      - name: Release build
+        run: cargo +stable build --release --locked --bin server --bin client
+
+      - name: Commit validated fix
+        run: |
+          rm .github/workflows/bot-balance-respawn-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/bin/server.rs src/bin/client.rs .github/workflows/bot-balance-respawn-fix.yml
+          git commit -m "fix: balance bots and snap respawns"
+          git push origin HEAD:main
