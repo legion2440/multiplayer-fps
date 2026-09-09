@@ -2,8 +2,7 @@ name: Native Windows fullscreen fix
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - .github/workflows/native-win-fullscreen.yml
 
@@ -19,22 +18,22 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Apply Windows fullscreen and gateway fixes
-        shell: python
+      - name: Apply fixes
         run: |
+          python3 - <<'PY'
           from pathlib import Path
 
-          cargo = Path("Cargo.toml")
+          cargo = Path('Cargo.toml')
           c = cargo.read_text()
           marker = 'serde_json = "1"\n'
           target_dep = "\n[target.'cfg(windows)'.dependencies]\nwinapi = { version = \"0.3.9\", features = [\"winuser\"] }\n"
           if "[target.'cfg(windows)'.dependencies]" not in c:
               if marker not in c:
-                  raise SystemExit("Cargo dependency marker not found")
+                  raise SystemExit('Cargo marker not found')
               c = c.replace(marker, marker + target_dep, 1)
           cargo.write_text(c)
 
-          path = Path("src/bin/client.rs")
+          path = Path('src/bin/client.rs')
           text = path.read_text()
 
           import_marker = 'use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};\n'
@@ -53,22 +52,22 @@ use winapi::um::winuser::{
 '''
           if imports not in text:
               if import_marker not in text:
-                  raise SystemExit("import marker not found")
+                  raise SystemExit('import marker not found')
               text = text.replace(import_marker, imports, 1)
 
-          conf_old = '''        high_dpi: true,
+          old_conf = '''        high_dpi: true,
+        fullscreen: false,
+        window_resizable: true,
+        ..Default::default()
+'''
+          new_conf = '''        high_dpi: true,
         fullscreen: false,
         window_resizable: false,
         ..Default::default()
 '''
-          conf_new = '''        high_dpi: true,
-        fullscreen: false,
-        window_resizable: false,
-        ..Default::default()
-'''
-          if conf_old not in text:
-              raise SystemExit("window config block not found")
-          text = text.replace(conf_old, conf_new, 1)
+          if old_conf not in text:
+              raise SystemExit('window config pattern not found')
+          text = text.replace(old_conf, new_conf, 1)
 
           window_block = '''fn window_conf() -> Conf {
     Conf {
@@ -82,7 +81,7 @@ use winapi::um::winuser::{
     }
 }
 '''
-          fullscreen_helper = window_block + '''
+          helper = window_block + '''
 #[cfg(target_os = "windows")]
 fn force_fullscreen() {
     unsafe {
@@ -122,12 +121,12 @@ fn force_fullscreen() {
     set_fullscreen(true);
 }
 '''
-          if "fn force_fullscreen()" not in text:
+          if 'fn force_fullscreen()' not in text:
               if window_block not in text:
-                  raise SystemExit("window_conf function not found")
-              text = text.replace(window_block, fullscreen_helper, 1)
+                  raise SystemExit('window_conf function not found')
+              text = text.replace(window_block, helper, 1)
 
-          main_old = '''    set_cursor_grab(false);
+          old_main = '''    set_cursor_grab(false);
     show_mouse(true);
 
     // Create a normal resizable Windows window first. With miniquad 0.4.6,
@@ -150,18 +149,18 @@ fn force_fullscreen() {
         }
         clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
 '''
-          main_new = '''    set_cursor_grab(false);
+          new_main = '''    set_cursor_grab(false);
     show_mouse(true);
     force_fullscreen();
 
     loop {
         clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
 '''
-          if main_old not in text:
-              raise SystemExit("old fullscreen loop not found")
-          text = text.replace(main_old, main_new, 1)
+          if old_main not in text:
+              raise SystemExit('main fullscreen block not found')
+          text = text.replace(old_main, new_main, 1)
 
-          cursor_old = '''    let cursor = if active && ((get_time() * 2.0) as i32 % 2 == 0) {
+          old_cursor = '''    let cursor = if active && ((get_time() * 2.0) as i32 % 2 == 0) {
         "_"
     } else {
         ""
@@ -169,14 +168,15 @@ fn force_fullscreen() {
     draw_text(
         format!("{value}{cursor}"),
 '''
-          cursor_new = '''    draw_text(
+          new_cursor = '''    draw_text(
         value,
 '''
-          if cursor_old not in text:
-              raise SystemExit("text-field cursor block not found")
-          text = text.replace(cursor_old, cursor_new, 1)
+          if old_cursor not in text:
+              raise SystemExit('field cursor block not found')
+          text = text.replace(old_cursor, new_cursor, 1)
 
           path.write_text(text)
+          PY
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -193,13 +193,12 @@ fn force_fullscreen() {
         run: cargo +stable clippy --all-targets --locked -- -D warnings
       - name: Release build
         run: cargo +stable build --release --locked --bin server --bin client
-      - name: Type-check Windows client
+      - name: Windows type-check
         run: |
           rustup target add x86_64-pc-windows-gnu --toolchain 1.74.0
           cargo +1.74.0 check --locked --target x86_64-pc-windows-gnu --bin client
 
       - name: Commit validated fix
-        shell: bash
         run: |
           rm .github/workflows/native-win-fullscreen.yml
           git config user.name "github-actions[bot]"
