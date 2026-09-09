@@ -2,7 +2,7 @@ from pathlib import Path
 
 cargo = Path("Cargo.toml")
 c = cargo.read_text()
-marker = 'serde_json = "1"\n'
+marker = 'serde_json = "1.0"\n'
 target_dep = "\n[target.'cfg(windows)'.dependencies]\nwinapi = { version = \"0.3.9\", features = [\"winuser\"] }\n"
 if "[target.'cfg(windows)'.dependencies]" not in c:
     if marker not in c:
