@@ -33,7 +33,8 @@ fn window_conf() -> Conf {
         window_title: "Maze Wars 3D - Multiplayer FPS".to_string(),
         window_width: 1180,
         window_height: 820,
-        high_dpi: false,
+        high_dpi: true,
+        fullscreen: true,
         window_resizable: true,
         ..Default::default()
     }
@@ -235,8 +236,13 @@ async fn main() {
 
     set_cursor_grab(false);
     show_mouse(true);
+    let mut fullscreen = true;
 
     loop {
+        if is_key_pressed(KeyCode::F11) {
+            fullscreen = !fullscreen;
+            set_fullscreen(fullscreen);
+        }
         clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
         screen = match screen {
             AppScreen::Connect(connect) => update_connect(connect),
