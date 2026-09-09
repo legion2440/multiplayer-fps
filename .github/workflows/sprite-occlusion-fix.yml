@@ -1,0 +1,216 @@
+name: Sprite occlusion fix
+
+on:
+  push:
+    paths:
+      - '.github/workflows/sprite-occlusion-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply per-column sprite depth test
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/bin/client.rs')
+          text = path.read_text()
+          start = text.index('fn draw_remote_players(')
+          end = text.index('\nfn draw_hud(', start)
+          replacement = r'''fn draw_remote_players(
+              game: &GameState,
+              view: Rect,
+              z_buffer: &[f32],
+              ray_count: usize,
+              palette: Palette,
+          ) {
+              let mut visuals: Vec<&RemoteVisual> = game
+                  .remotes
+                  .values()
+                  .filter(|visual| visual.state.health > 0)
+                  .collect();
+              visuals.sort_by(|left, right| {
+                  let dl = squared_distance((game.x, game.y), (left.display_x, left.display_y));
+                  let dr = squared_distance((game.x, game.y), (right.display_x, right.display_y));
+                  dr.total_cmp(&dl)
+              });
+
+              let ray_width = view.w / ray_count as f32;
+              for visual in visuals {
+                  let dx = visual.display_x - game.x;
+                  let dy = visual.display_y - game.y;
+                  let distance = (dx * dx + dy * dy).sqrt().max(0.01);
+                  let relative = normalize_angle(dy.atan2(dx) - game.angle);
+                  if relative.abs() > game.settings.fov * 0.72 {
+                      continue;
+                  }
+
+                  let depth = (distance * relative.cos()).max(0.01);
+                  let screen_x = view.x
+                      + view.w * 0.5
+                      + (relative / (game.settings.fov * 0.5)) * view.w * 0.5;
+                  let size = (view.h * 0.64 / depth).clamp(18.0, view.h * 0.55);
+                  let cy = view.y + view.h * 0.5;
+                  let eye_radius = size * 0.38;
+                  let left = screen_x - eye_radius;
+                  let right = screen_x + eye_radius;
+                  if right < view.x || left > view.x + view.w {
+                      continue;
+                  }
+
+                  let first_ray = (((left - view.x) / view.w) * ray_count as f32)
+                      .floor()
+                      .max(0.0) as usize;
+                  let last_ray = (((right - view.x) / view.w) * ray_count as f32)
+                      .ceil()
+                      .min(ray_count as f32 - 1.0)
+                      .max(0.0) as usize;
+                  if first_ray > last_ray || first_ray >= ray_count {
+                      continue;
+                  }
+
+                  let eye = if visual.state.bot {
+                      Color::new(0.96, 0.83, 0.67, 1.0)
+                  } else {
+                      WHITE
+                  };
+                  let iris_radius = size * 0.15;
+                  let pupil_radius = size * 0.07;
+                  let look_dx = (visual.state.angle - game.angle).sin() * size * 0.035;
+                  let pupil_x = screen_x + look_dx;
+                  let outline = (size * 0.035).max(2.0);
+                  let mut visible_width = 0.0;
+
+                  for ray_index in first_ray..=last_ray {
+                      if depth > z_buffer[ray_index] + 0.04 {
+                          continue;
+                      }
+
+                      let strip_x = view.x + ray_index as f32 * ray_width;
+                      let strip_right = (strip_x + ray_width + 0.75).min(view.x + view.w);
+                      let sample_x = (strip_x + strip_right) * 0.5;
+                      let nx = (sample_x - screen_x) / eye_radius;
+                      if nx.abs() > 1.0 {
+                          continue;
+                      }
+
+                      visible_width += strip_right - strip_x;
+                      let half_eye = eye_radius * (1.0 - nx * nx).sqrt();
+                      draw_rectangle(
+                          strip_x,
+                          cy - half_eye,
+                          strip_right - strip_x,
+                          half_eye * 2.0,
+                          eye,
+                      );
+
+                      let iris_nx = (sample_x - screen_x) / iris_radius;
+                      if iris_nx.abs() <= 1.0 {
+                          let half_iris = iris_radius * (1.0 - iris_nx * iris_nx).sqrt();
+                          draw_rectangle(
+                              strip_x,
+                              cy - half_iris,
+                              strip_right - strip_x,
+                              half_iris * 2.0,
+                              palette.accent,
+                          );
+                      }
+
+                      let pupil_nx = (sample_x - pupil_x) / pupil_radius;
+                      if pupil_nx.abs() <= 1.0 {
+                          let half_pupil = pupil_radius * (1.0 - pupil_nx * pupil_nx).sqrt();
+                          draw_rectangle(
+                              strip_x,
+                              cy - half_pupil,
+                              strip_right - strip_x,
+                              half_pupil * 2.0,
+                              BLACK,
+                          );
+                      }
+
+                      let edge = outline.min(half_eye);
+                      draw_rectangle(
+                          strip_x,
+                          cy - half_eye,
+                          strip_right - strip_x,
+                          edge,
+                          BLACK,
+                      );
+                      draw_rectangle(
+                          strip_x,
+                          cy + half_eye - edge,
+                          strip_right - strip_x,
+                          edge,
+                          BLACK,
+                      );
+                  }
+
+                  let visible_ratio = (visible_width / (eye_radius * 2.0)).clamp(0.0, 1.0);
+                  if visible_ratio < 0.55 {
+                      continue;
+                  }
+
+                  draw_text(
+                      shorten(&visual.state.name, 16),
+                      screen_x - size * 0.38,
+                      cy - size * 0.48,
+                      (size * 0.11).clamp(12.0, 22.0),
+                      WHITE,
+                  );
+                  if visual.state.bot {
+                      draw_text(
+                          "BOT",
+                          screen_x + size * 0.18,
+                          cy - size * 0.47,
+                          (size * 0.08).clamp(10.0, 16.0),
+                          palette.danger,
+                      );
+                  }
+                  let health_w = size * 0.7;
+                  let health_x = screen_x - health_w * 0.5;
+                  let health_y = cy + size * 0.48;
+                  draw_rectangle(health_x, health_y, health_w, 5.0, DARKGRAY);
+                  draw_rectangle(
+                      health_x,
+                      health_y,
+                      health_w * (visual.state.health.max(0) as f32 / 100.0),
+                      5.0,
+                      palette.health,
+                  );
+              }
+          }
+          '''
+          path.write_text(text[:start] + replacement + text[end:])
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.74.0
+
+      - name: Format
+        run: cargo +stable fmt --all -- --check
+      - name: Rust 1.74 check
+        run: cargo +1.74.0 check --all-targets --locked
+      - name: Test
+        run: cargo +stable test --all-targets --locked
+      - name: Clippy
+        run: cargo +stable clippy --all-targets --locked -- -D warnings
+      - name: Release build
+        run: cargo +stable build --release --bins --locked
+
+      - name: Commit validated fix
+        run: |
+          rm .github/workflows/sprite-occlusion-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/bin/client.rs .github/workflows/sprite-occlusion-fix.yml
+          git commit -m 'fix: depth-test remote sprites against walls'
+          git push origin HEAD:main
