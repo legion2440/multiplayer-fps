@@ -762,9 +762,17 @@ fn update_game(mut game: GameState) -> AppScreen {
                         if old_health > 0 && player.health == 0 {
                             deaths.push((player.id, player.name.clone()));
                         }
+                        let respawned = old_health <= 0 && player.health > 0;
                         game.remotes
                             .entry(player.id)
                             .and_modify(|visual| {
+                                let dx = player.x - visual.display_x;
+                                let dy = player.y - visual.display_y;
+                                let teleported = dx * dx + dy * dy > 1.5 * 1.5;
+                                if respawned || teleported {
+                                    visual.display_x = player.x;
+                                    visual.display_y = player.y;
+                                }
                                 visual.state = player.clone();
                             })
                             .or_insert(RemoteVisual {

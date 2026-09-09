@@ -65,6 +65,53 @@ struct Config {
     level: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct BotTuning {
+    chase_speed: f32,
+    path_speed: f32,
+    turn_step: f32,
+    path_turn_step: f32,
+    fire_angle: f32,
+    shot_base_ms: u64,
+    shot_jitter_ms: u64,
+    repath_ms: u64,
+}
+
+fn bot_tuning(level_index: usize) -> BotTuning {
+    match level_index {
+        0 => BotTuning {
+            chase_speed: 0.45,
+            path_speed: 0.50,
+            turn_step: 0.024,
+            path_turn_step: 0.032,
+            fire_angle: 0.08,
+            shot_base_ms: 1_600,
+            shot_jitter_ms: 120,
+            repath_ms: 350,
+        },
+        2 => BotTuning {
+            chase_speed: 0.72,
+            path_speed: 0.75,
+            turn_step: 0.055,
+            path_turn_step: 0.075,
+            fire_angle: 0.12,
+            shot_base_ms: 650,
+            shot_jitter_ms: 45,
+            repath_ms: 180,
+        },
+        _ => BotTuning {
+            chase_speed: 0.60,
+            path_speed: 0.64,
+            turn_step: 0.038,
+            path_turn_step: 0.052,
+            fire_angle: 0.10,
+            shot_base_ms: 1_000,
+            shot_jitter_ms: 75,
+            repath_ms: 240,
+        },
+    }
+}
+
 fn main() -> io::Result<()> {
     let config = parse_args();
     let socket = UdpSocket::bind(&config.bind)?;
@@ -124,8 +171,8 @@ fn main() -> io::Result<()> {
 
         tick = tick.wrapping_add(1);
         remove_timed_out(&mut players, &mut address_to_id);
-        update_respawns(&mut players, &levels[level_index], tick);
-        update_bots(&mut players, &levels[level_index], now, tick);
+        update_respawns(&mut players, &levels[level_index], level_index, tick);
+        update_bots(&mut players, &levels[level_index], level_index, now, tick);
         update_humans(
             &mut players,
             &levels[level_index],
@@ -236,7 +283,7 @@ fn receive_packets(
                         continue;
                     }
                     *level_index = CUSTOM_INDEX;
-                    reset_for_level(players, &levels[CUSTOM_INDEX]);
+                    reset_for_level(players, &levels[CUSTOM_INDEX], CUSTOM_INDEX);
                     *level_change_allowed_at = Instant::now() + Duration::from_secs(2);
                     broadcast_raw(socket, players, &custom_level_packet(&levels[CUSTOM_INDEX]));
                     broadcast_raw(socket, players, &level_packet(CUSTOM_INDEX));
@@ -266,7 +313,7 @@ fn receive_packets(
                 if address_to_id.contains_key(&source) && Instant::now() >= *level_change_allowed_at
                 {
                     *level_index = (*level_index + 1) % levels.len();
-                    reset_for_level(players, &levels[*level_index]);
+                    reset_for_level(players, &levels[*level_index], *level_index);
                     *level_change_allowed_at = Instant::now() + Duration::from_secs(2);
                     broadcast_raw(socket, players, &level_packet(*level_index));
                     println!(
@@ -283,7 +330,7 @@ fn receive_packets(
                     && Instant::now() >= *level_change_allowed_at
                 {
                     *level_index = requested;
-                    reset_for_level(players, &levels[*level_index]);
+                    reset_for_level(players, &levels[*level_index], *level_index);
                     *level_change_allowed_at = Instant::now() + Duration::from_secs(2);
                     broadcast_raw(socket, players, &level_packet(*level_index));
                     println!(
@@ -340,7 +387,14 @@ fn update_humans(players: &mut HashMap<u32, Player>, maze: &Maze, dt: f32) {
     }
 }
 
-fn update_bots(players: &mut HashMap<u32, Player>, maze: &Maze, now: Instant, tick: u64) {
+fn update_bots(
+    players: &mut HashMap<u32, Player>,
+    maze: &Maze,
+    level_index: usize,
+    now: Instant,
+    tick: u64,
+) {
+    let tuning = bot_tuning(level_index);
     let humans: Vec<(u32, f32, f32)> = players
         .values()
         .filter(|player| !player.bot && player.health > 0)
@@ -381,7 +435,8 @@ fn update_bots(players: &mut HashMap<u32, Player>, maze: &Maze, now: Instant, ti
             .get_mut(&bot_id)
             .expect("bot id came from player map");
         let angle_error = normalize_angle(desired_angle - bot.angle);
-        bot.angle = normalize_angle(bot.angle + angle_error.clamp(-0.055, 0.055));
+        bot.angle =
+            normalize_angle(bot.angle + angle_error.clamp(-tuning.turn_step, tuning.turn_step));
 
         if sees_target {
             let distance = squared_distance((bot.x, bot.y), (tx, ty)).sqrt();
@@ -391,16 +446,17 @@ fn update_bots(players: &mut HashMap<u32, Player>, maze: &Maze, now: Instant, ti
                     &mut bot.x,
                     &mut bot.y,
                     &mut bot.angle,
-                    0.72,
+                    tuning.chase_speed,
                     0.0,
                     0.0,
                     1.0 / TICK_HZ as f32,
                 );
             }
-            if angle_error.abs() < 0.12 && now >= bot.ai_shot_at {
+            if angle_error.abs() < tuning.fire_angle && now >= bot.ai_shot_at {
                 bot.shoot_requested = true;
                 let jitter = (bot.id as u64 * 17 + tick) % 7;
-                bot.ai_shot_at = now + Duration::from_millis(650 + jitter * 45);
+                bot.ai_shot_at = now
+                    + Duration::from_millis(tuning.shot_base_ms + jitter * tuning.shot_jitter_ms);
             }
         } else {
             if now >= bot.ai_repath_at {
@@ -409,18 +465,20 @@ fn update_bots(players: &mut HashMap<u32, Player>, maze: &Maze, now: Instant, ti
                 bot.ai_waypoint = maze
                     .next_step_toward(start, goal)
                     .map(|(x, y)| (x as f32 + 0.5, y as f32 + 0.5));
-                bot.ai_repath_at = now + Duration::from_millis(180);
+                bot.ai_repath_at = now + Duration::from_millis(tuning.repath_ms);
             }
             if let Some((wx, wy)) = bot.ai_waypoint {
                 let desired = (wy - bot.y).atan2(wx - bot.x);
                 let error = normalize_angle(desired - bot.angle);
-                bot.angle = normalize_angle(bot.angle + error.clamp(-0.075, 0.075));
+                bot.angle = normalize_angle(
+                    bot.angle + error.clamp(-tuning.path_turn_step, tuning.path_turn_step),
+                );
                 move_entity(
                     maze,
                     &mut bot.x,
                     &mut bot.y,
                     &mut bot.angle,
-                    0.75,
+                    tuning.path_speed,
                     0.0,
                     0.0,
                     1.0 / TICK_HZ as f32,
@@ -480,8 +538,9 @@ fn process_shots(socket: &UdpSocket, players: &mut HashMap<u32, Player>, maze: &
     }
 }
 
-fn update_respawns(players: &mut HashMap<u32, Player>, maze: &Maze, tick: u64) {
+fn update_respawns(players: &mut HashMap<u32, Player>, maze: &Maze, level_index: usize, tick: u64) {
     let now = Instant::now();
+    let tuning = bot_tuning(level_index);
     let due: Vec<u32> = players
         .values()
         .filter(|player| player.health == 0 && player.respawn_at.is_some_and(|at| now >= at))
@@ -497,6 +556,11 @@ fn update_respawns(players: &mut HashMap<u32, Player>, maze: &Maze, tick: u64) {
             player.respawn_at = None;
             player.input = InputState::default();
             player.shoot_requested = false;
+            if player.bot {
+                player.ai_waypoint = None;
+                player.ai_repath_at = now + Duration::from_millis(tuning.repath_ms);
+                player.ai_shot_at = now + Duration::from_millis(tuning.shot_base_ms);
+            }
         }
     }
 }
@@ -551,7 +615,9 @@ fn add_bots(players: &mut HashMap<u32, Player>, count: usize, maze: &Maze, next_
     }
 }
 
-fn reset_for_level(players: &mut HashMap<u32, Player>, maze: &Maze) {
+fn reset_for_level(players: &mut HashMap<u32, Player>, maze: &Maze, level_index: usize) {
+    let now = Instant::now();
+    let tuning = bot_tuning(level_index);
     let ids: Vec<u32> = players.keys().copied().collect();
     for (slot, id) in ids.into_iter().enumerate() {
         let spawn = spawn_for_slot(maze, slot);
@@ -563,6 +629,11 @@ fn reset_for_level(players: &mut HashMap<u32, Player>, maze: &Maze) {
             player.respawn_at = None;
             player.input = InputState::default();
             player.ai_waypoint = None;
+            player.shoot_requested = false;
+            if player.bot {
+                player.ai_repath_at = now + Duration::from_millis(tuning.repath_ms);
+                player.ai_shot_at = now + Duration::from_millis(tuning.shot_base_ms);
+            }
         }
     }
 }
@@ -623,4 +694,23 @@ fn parse_args() -> Config {
         }
     }
     config
+}
+
+#[cfg(test)]
+mod bot_tuning_tests {
+    use super::bot_tuning;
+
+    #[test]
+    fn difficulty_scales_from_novice_to_master() {
+        let novice = bot_tuning(0);
+        let intermediate = bot_tuning(1);
+        let master = bot_tuning(2);
+
+        assert!(novice.chase_speed < intermediate.chase_speed);
+        assert!(intermediate.chase_speed < master.chase_speed);
+        assert!(novice.turn_step < intermediate.turn_step);
+        assert!(intermediate.turn_step < master.turn_step);
+        assert!(novice.shot_base_ms > intermediate.shot_base_ms);
+        assert!(intermediate.shot_base_ms > master.shot_base_ms);
+    }
 }
