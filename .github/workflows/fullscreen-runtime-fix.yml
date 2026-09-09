@@ -1,0 +1,118 @@
+name: Runtime fullscreen fix
+
+on:
+  push:
+    branches:
+      - fullscreen-runtime-fix
+    paths:
+      - .github/workflows/fullscreen-runtime-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fullscreen-runtime-fix
+          fetch-depth: 0
+
+      - name: Apply window fix
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("src/bin/client.rs")
+          text = path.read_text()
+
+          old = '''        high_dpi: true,
+        fullscreen: true,
+        window_resizable: true,
+'''
+          new = '''        high_dpi: true,
+        fullscreen: false,
+        window_resizable: true,
+'''
+          if old not in text:
+              raise SystemExit("window config pattern not found")
+          text = text.replace(old, new, 1)
+
+          old = '''    set_cursor_grab(false);
+    show_mouse(true);
+    let mut fullscreen = true;
+
+    loop {
+        if is_key_pressed(KeyCode::F11) {
+            fullscreen = !fullscreen;
+            set_fullscreen(fullscreen);
+        }
+        clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
+        screen = match screen {
+            AppScreen::Connect(connect) => update_connect(connect),
+            AppScreen::Game(game) => update_game(game),
+            AppScreen::Editor(editor) => update_editor(editor),
+        };
+        next_frame().await;
+    }
+'''
+          new = '''    set_cursor_grab(false);
+    show_mouse(true);
+
+    // On Windows/miniquad 0.4.6 the startup fullscreen flag can leave a fixed-size
+    // decorated window. Create the normal resizable window first, let the OS finish
+    // creating it, then switch to fullscreen through the runtime API.
+    clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
+    screen = match screen {
+        AppScreen::Connect(connect) => update_connect(connect),
+        AppScreen::Game(game) => update_game(game),
+        AppScreen::Editor(editor) => update_editor(editor),
+    };
+    next_frame().await;
+    set_fullscreen(true);
+    let mut fullscreen = true;
+
+    loop {
+        if is_key_pressed(KeyCode::F11) {
+            fullscreen = !fullscreen;
+            set_fullscreen(fullscreen);
+        }
+        clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
+        screen = match screen {
+            AppScreen::Connect(connect) => update_connect(connect),
+            AppScreen::Game(game) => update_game(game),
+            AppScreen::Editor(editor) => update_editor(editor),
+        };
+        next_frame().await;
+    }
+'''
+          if old not in text:
+              raise SystemExit("main loop pattern not found")
+          path.write_text(text.replace(old, new, 1))
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: dtolnay/rust-toolchain@1.74.0
+
+      - name: Format
+        run: cargo +stable fmt --all
+      - name: Rust 1.74 check
+        run: cargo +1.74.0 check --locked --all-targets
+      - name: Test
+        run: cargo +stable test --locked
+      - name: Clippy
+        run: cargo +stable clippy --all-targets --locked -- -D warnings
+      - name: Release build
+        run: cargo +stable build --release --locked --bin server --bin client
+
+      - name: Commit validated fix
+        shell: bash
+        run: |
+          rm .github/workflows/fullscreen-runtime-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/bin/client.rs .github/workflows/fullscreen-runtime-fix.yml
+          git commit -m "fix: apply fullscreen after native window creation"
+          git push origin HEAD:fullscreen-runtime-fix
