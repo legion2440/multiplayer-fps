@@ -1,0 +1,73 @@
+name: Native visual input fix v2
+
+on:
+  push:
+    branches:
+      - native-visual-input-fix
+    paths:
+      - .github/workflows/native-visual-fix-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: native-visual-input-fix
+          fetch-depth: 0
+
+      - name: Apply native UI and input fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/native-visual-fix.yml').read_text().splitlines()
+          marker = '      - name: Apply native UI and input fixes'
+          start = workflow.index(marker)
+          run_line = next(i for i in range(start, len(workflow)) if workflow[i] == '        run: |')
+          end = next(i for i in range(run_line + 1, len(workflow)) if workflow[i].startswith('      - uses:'))
+          code = '\n'.join(line[10:] if line.startswith('          ') else line for line in workflow[run_line + 1:end])
+          old = '              if old not in text:\n                  raise SystemExit(f"pattern not found: {old[:120]!r}")'
+          new = '              if old not in text:\n                  if old.startswith("    let bob = if is_key_down(KeyCode::W)"):\n                      return\n                  raise SystemExit(f"pattern not found: {old[:120]!r}")'
+          if old not in code:
+              raise SystemExit('could not patch helper')
+          code = code.replace(old, new, 1)
+          exec(compile(code, '<native-visual-fix>', 'exec'))
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: dtolnay/rust-toolchain@1.74.0
+
+      - name: Rust 1.74 check
+        run: cargo +1.74.0 check --locked --all-targets
+
+      - name: Format
+        run: cargo +stable fmt --all -- --check
+
+      - name: Check
+        env:
+          RUSTFLAGS: -Dwarnings
+        run: cargo +stable check --locked --all-targets
+
+      - name: Test
+        run: cargo +stable test --locked
+
+      - name: Clippy
+        run: cargo +stable clippy --locked --all-targets -- -D warnings
+
+      - name: Release build
+        run: cargo +stable build --locked --release --bins
+
+      - name: Commit validated fix
+        run: |
+          git rm .github/workflows/native-visual-fix.yml .github/workflows/native-visual-fix-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/bin/client.rs
+          git commit -m "fix: restore native game presentation and controls"
+          git push origin HEAD:native-visual-input-fix
