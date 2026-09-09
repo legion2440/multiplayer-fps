@@ -1184,39 +1184,119 @@ fn draw_remote_players(
         dr.total_cmp(&dl)
     });
 
+    let ray_width = view.w / ray_count as f32;
     for visual in visuals {
         let dx = visual.display_x - game.x;
         let dy = visual.display_y - game.y;
         let distance = (dx * dx + dy * dy).sqrt().max(0.01);
         let relative = normalize_angle(dy.atan2(dx) - game.angle);
-        if relative.abs() > game.settings.fov * 0.62 {
-            continue;
-        }
-        let screen_x =
-            view.x + view.w * 0.5 + (relative / (game.settings.fov * 0.5)) * view.w * 0.5;
-        if screen_x < view.x || screen_x > view.x + view.w {
-            continue;
-        }
-        let ray_index = (((screen_x - view.x) / view.w) * ray_count as f32).floor() as isize;
-        if ray_index < 0
-            || ray_index >= ray_count as isize
-            || distance > z_buffer[ray_index as usize] + 0.25
-        {
+        if relative.abs() > game.settings.fov * 0.72 {
             continue;
         }
 
-        let size = (view.h * 0.64 / distance).clamp(18.0, view.h * 0.55);
+        let depth = (distance * relative.cos()).max(0.01);
+        let screen_x =
+            view.x + view.w * 0.5 + (relative / (game.settings.fov * 0.5)) * view.w * 0.5;
+        let size = (view.h * 0.64 / depth).clamp(18.0, view.h * 0.55);
         let cy = view.y + view.h * 0.5;
+        let eye_radius = size * 0.38;
+        let left = screen_x - eye_radius;
+        let right = screen_x + eye_radius;
+        if right < view.x || left > view.x + view.w {
+            continue;
+        }
+
+        let first_ray = (((left - view.x) / view.w) * ray_count as f32)
+            .floor()
+            .max(0.0) as usize;
+        let last_ray = (((right - view.x) / view.w) * ray_count as f32)
+            .ceil()
+            .min(ray_count as f32 - 1.0)
+            .max(0.0) as usize;
+        if first_ray > last_ray || first_ray >= ray_count {
+            continue;
+        }
+
         let eye = if visual.state.bot {
             Color::new(0.96, 0.83, 0.67, 1.0)
         } else {
             WHITE
         };
-        draw_circle(screen_x, cy, size * 0.38, eye);
-        draw_circle_lines(screen_x, cy, size * 0.38, (size * 0.035).max(2.0), BLACK);
-        draw_circle(screen_x, cy, size * 0.15, palette.accent);
+        let iris_radius = size * 0.15;
+        let pupil_radius = size * 0.07;
         let look_dx = (visual.state.angle - game.angle).sin() * size * 0.035;
-        draw_circle(screen_x + look_dx, cy, size * 0.07, BLACK);
+        let pupil_x = screen_x + look_dx;
+        let outline = (size * 0.035).max(2.0);
+        let mut visible_width = 0.0;
+
+        for (ray_index, wall_depth) in z_buffer
+            .iter()
+            .enumerate()
+            .take(last_ray + 1)
+            .skip(first_ray)
+        {
+            if depth > *wall_depth + 0.04 {
+                continue;
+            }
+
+            let strip_x = view.x + ray_index as f32 * ray_width;
+            let strip_right = (strip_x + ray_width + 0.75).min(view.x + view.w);
+            let sample_x = (strip_x + strip_right) * 0.5;
+            let nx = (sample_x - screen_x) / eye_radius;
+            if nx.abs() > 1.0 {
+                continue;
+            }
+
+            visible_width += strip_right - strip_x;
+            let half_eye = eye_radius * (1.0 - nx * nx).sqrt();
+            draw_rectangle(
+                strip_x,
+                cy - half_eye,
+                strip_right - strip_x,
+                half_eye * 2.0,
+                eye,
+            );
+
+            let iris_nx = (sample_x - screen_x) / iris_radius;
+            if iris_nx.abs() <= 1.0 {
+                let half_iris = iris_radius * (1.0 - iris_nx * iris_nx).sqrt();
+                draw_rectangle(
+                    strip_x,
+                    cy - half_iris,
+                    strip_right - strip_x,
+                    half_iris * 2.0,
+                    palette.accent,
+                );
+            }
+
+            let pupil_nx = (sample_x - pupil_x) / pupil_radius;
+            if pupil_nx.abs() <= 1.0 {
+                let half_pupil = pupil_radius * (1.0 - pupil_nx * pupil_nx).sqrt();
+                draw_rectangle(
+                    strip_x,
+                    cy - half_pupil,
+                    strip_right - strip_x,
+                    half_pupil * 2.0,
+                    BLACK,
+                );
+            }
+
+            let edge = outline.min(half_eye);
+            draw_rectangle(strip_x, cy - half_eye, strip_right - strip_x, edge, BLACK);
+            draw_rectangle(
+                strip_x,
+                cy + half_eye - edge,
+                strip_right - strip_x,
+                edge,
+                BLACK,
+            );
+        }
+
+        let visible_ratio = (visible_width / (eye_radius * 2.0)).clamp(0.0, 1.0);
+        if visible_ratio < 0.55 {
+            continue;
+        }
+
         draw_text(
             shorten(&visual.state.name, 16),
             screen_x - size * 0.38,
