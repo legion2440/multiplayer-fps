@@ -495,6 +495,8 @@ fn update_respawns(players: &mut HashMap<u32, Player>, maze: &Maze, tick: u64) {
             player.angle = 0.0;
             player.health = 100;
             player.respawn_at = None;
+            player.input = InputState::default();
+            player.shoot_requested = false;
         }
     }
 }
