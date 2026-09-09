@@ -34,7 +34,7 @@ fn window_conf() -> Conf {
         window_width: 1180,
         window_height: 820,
         high_dpi: false,
-        window_resizable: false,
+        window_resizable: true,
         ..Default::default()
     }
 }
@@ -558,6 +558,10 @@ fn update_game(mut game: GameState) -> AppScreen {
     game.kill_feed
         .retain(|entry| Instant::now() < entry.expires_at);
 
+    // Miniquad desktop capture is frame-scoped; keep it asserted while gameplay owns the mouse.
+    set_cursor_grab(game.cursor_grabbed);
+    show_mouse(!game.cursor_grabbed);
+
     if is_key_pressed(KeyCode::Tab) {
         game.overlay = if game.overlay == Overlay::Scoreboard {
             Overlay::None
@@ -628,7 +632,7 @@ fn update_game(mut game: GameState) -> AppScreen {
         }
     }
 
-    let controls_enabled = game.overlay == Overlay::None;
+    let controls_enabled = game.overlay == Overlay::None && game.health > 0;
     let mut forward = 0.0;
     let mut strafe = 0.0;
     let mut turn = 0.0;
