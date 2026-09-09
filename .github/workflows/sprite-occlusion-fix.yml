@@ -89,8 +89,13 @@ jobs:
                   let outline = (size * 0.035).max(2.0);
                   let mut visible_width = 0.0;
 
-                  for ray_index in first_ray..=last_ray {
-                      if depth > z_buffer[ray_index] + 0.04 {
+                  for (ray_index, wall_depth) in z_buffer
+                      .iter()
+                      .enumerate()
+                      .take(last_ray + 1)
+                      .skip(first_ray)
+                  {
+                      if depth > *wall_depth + 0.04 {
                           continue;
                       }
 
