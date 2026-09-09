@@ -23,70 +23,17 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-
           path = Path("src/bin/client.rs")
           text = path.read_text()
 
-          old = '''        high_dpi: true,
-        fullscreen: true,
-        window_resizable: true,
-'''
-          new = '''        high_dpi: true,
-        fullscreen: false,
-        window_resizable: true,
-'''
+          old = "        high_dpi: true,\n        fullscreen: true,\n        window_resizable: true,\n"
+          new = "        high_dpi: true,\n        fullscreen: false,\n        window_resizable: true,\n"
           if old not in text:
               raise SystemExit("window config pattern not found")
           text = text.replace(old, new, 1)
 
-          old = '''    set_cursor_grab(false);
-    show_mouse(true);
-    let mut fullscreen = true;
-
-    loop {
-        if is_key_pressed(KeyCode::F11) {
-            fullscreen = !fullscreen;
-            set_fullscreen(fullscreen);
-        }
-        clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
-        screen = match screen {
-            AppScreen::Connect(connect) => update_connect(connect),
-            AppScreen::Game(game) => update_game(game),
-            AppScreen::Editor(editor) => update_editor(editor),
-        };
-        next_frame().await;
-    }
-'''
-          new = '''    set_cursor_grab(false);
-    show_mouse(true);
-
-    // On Windows/miniquad 0.4.6 the startup fullscreen flag can leave a fixed-size
-    // decorated window. Create the normal resizable window first, let the OS finish
-    // creating it, then switch to fullscreen through the runtime API.
-    clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
-    screen = match screen {
-        AppScreen::Connect(connect) => update_connect(connect),
-        AppScreen::Game(game) => update_game(game),
-        AppScreen::Editor(editor) => update_editor(editor),
-    };
-    next_frame().await;
-    set_fullscreen(true);
-    let mut fullscreen = true;
-
-    loop {
-        if is_key_pressed(KeyCode::F11) {
-            fullscreen = !fullscreen;
-            set_fullscreen(fullscreen);
-        }
-        clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
-        screen = match screen {
-            AppScreen::Connect(connect) => update_connect(connect),
-            AppScreen::Game(game) => update_game(game),
-            AppScreen::Editor(editor) => update_editor(editor),
-        };
-        next_frame().await;
-    }
-'''
+          old = "    set_cursor_grab(false);\n    show_mouse(true);\n    let mut fullscreen = true;\n\n    loop {\n        if is_key_pressed(KeyCode::F11) {\n            fullscreen = !fullscreen;\n            set_fullscreen(fullscreen);\n        }\n        clear_background(Color::new(0.008, 0.011, 0.02, 1.0));\n        screen = match screen {\n            AppScreen::Connect(connect) => update_connect(connect),\n            AppScreen::Game(game) => update_game(game),\n            AppScreen::Editor(editor) => update_editor(editor),\n        };\n        next_frame().await;\n    }\n"
+          new = "    set_cursor_grab(false);\n    show_mouse(true);\n\n    // Create a normal resizable Windows window first. With miniquad 0.4.6,\n    // startup fullscreen can leave a decorated fixed-size window. Apply\n    // fullscreen only after the native window has completed one frame.\n    clear_background(Color::new(0.008, 0.011, 0.02, 1.0));\n    screen = match screen {\n        AppScreen::Connect(connect) => update_connect(connect),\n        AppScreen::Game(game) => update_game(game),\n        AppScreen::Editor(editor) => update_editor(editor),\n    };\n    next_frame().await;\n    set_fullscreen(true);\n    let mut fullscreen = true;\n\n    loop {\n        if is_key_pressed(KeyCode::F11) {\n            fullscreen = !fullscreen;\n            set_fullscreen(fullscreen);\n        }\n        clear_background(Color::new(0.008, 0.011, 0.02, 1.0));\n        screen = match screen {\n            AppScreen::Connect(connect) => update_connect(connect),\n            AppScreen::Game(game) => update_game(game),\n            AppScreen::Editor(editor) => update_editor(editor),\n        };\n        next_frame().await;\n    }\n"
           if old not in text:
               raise SystemExit("main loop pattern not found")
           path.write_text(text.replace(old, new, 1))
