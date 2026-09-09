@@ -1,4 +1,5 @@
 name: Native Windows fullscreen fix
+# retry after correcting Cargo marker
 
 on:
   push:
