@@ -23,44 +23,18 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-
           path = Path("src/bin/client.rs")
           text = path.read_text()
-
-          old = '''        high_dpi: false,
-        window_resizable: true,
-        ..Default::default()
-'''
-          new = '''        high_dpi: true,
-        fullscreen: true,
-        window_resizable: true,
-        ..Default::default()
-'''
+          old = "        high_dpi: false,\n        window_resizable: true,"
+          new = "        high_dpi: true,\n        fullscreen: true,\n        window_resizable: true,"
           if old not in text:
               raise SystemExit("window config pattern not found")
           text = text.replace(old, new, 1)
-
-          old = '''    set_cursor_grab(false);
-    show_mouse(true);
-
-    loop {
-        clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
-'''
-          new = '''    set_cursor_grab(false);
-    show_mouse(true);
-    let mut fullscreen = true;
-
-    loop {
-        if is_key_pressed(KeyCode::F11) {
-            fullscreen = !fullscreen;
-            set_fullscreen(fullscreen);
-        }
-        clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
-'''
+          old = "    set_cursor_grab(false);\n    show_mouse(true);\n\n    loop {\n        clear_background(Color::new(0.008, 0.011, 0.02, 1.0));"
+          new = "    set_cursor_grab(false);\n    show_mouse(true);\n    let mut fullscreen = true;\n\n    loop {\n        if is_key_pressed(KeyCode::F11) {\n            fullscreen = !fullscreen;\n            set_fullscreen(fullscreen);\n        }\n        clear_background(Color::new(0.008, 0.011, 0.02, 1.0));"
           if old not in text:
               raise SystemExit("main loop pattern not found")
           text = text.replace(old, new, 1)
-
           path.write_text(text)
 
       - uses: dtolnay/rust-toolchain@stable
