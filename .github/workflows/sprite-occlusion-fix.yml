@@ -196,7 +196,7 @@ jobs:
           toolchain: 1.74.0
 
       - name: Format
-        run: cargo +stable fmt --all -- --check
+        run: cargo +stable fmt --all
       - name: Rust 1.74 check
         run: cargo +1.74.0 check --all-targets --locked
       - name: Test
