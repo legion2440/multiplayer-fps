@@ -11,6 +11,17 @@ use std::io;
 use std::net::UdpSocket;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[cfg(target_os = "windows")]
+use std::ptr;
+#[cfg(target_os = "windows")]
+use winapi::shared::windef::HWND;
+#[cfg(target_os = "windows")]
+use winapi::um::winuser::{
+    FindWindowW, GetMonitorInfoW, MonitorFromWindow, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE,
+    GWL_STYLE, HWND_TOP, MONITORINFO, MONITOR_DEFAULTTONEAREST, SWP_FRAMECHANGED, SWP_SHOWWINDOW,
+    WS_EX_APPWINDOW, WS_POPUP, WS_VISIBLE,
+};
+
 fn draw_text<T: AsRef<str>>(
     text: T,
     x: f32,
@@ -35,9 +46,48 @@ fn window_conf() -> Conf {
         window_height: 820,
         high_dpi: true,
         fullscreen: false,
-        window_resizable: true,
+        window_resizable: false,
         ..Default::default()
     }
+}
+
+#[cfg(target_os = "windows")]
+fn force_fullscreen() {
+    unsafe {
+        let title: Vec<u16> = "Maze Wars 3D - Multiplayer FPS"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let hwnd: HWND = FindWindowW(ptr::null(), title.as_ptr());
+        if hwnd.is_null() {
+            return;
+        }
+
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(monitor, &mut info) == 0 {
+            return;
+        }
+
+        SetWindowLongPtrW(hwnd, GWL_STYLE, (WS_POPUP | WS_VISIBLE) as isize);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, WS_EX_APPWINDOW as isize);
+        let rect = info.rcMonitor;
+        SetWindowPos(
+            hwnd,
+            HWND_TOP,
+            rect.left,
+            rect.top,
+            rect.right - rect.left,
+            rect.bottom - rect.top,
+            SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn force_fullscreen() {
+    set_fullscreen(true);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,25 +286,9 @@ async fn main() {
 
     set_cursor_grab(false);
     show_mouse(true);
-
-    // Create a normal resizable Windows window first. With miniquad 0.4.6,
-    // startup fullscreen can leave a decorated fixed-size window. Apply
-    // fullscreen only after the native window has completed one frame.
-    clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
-    screen = match screen {
-        AppScreen::Connect(connect) => update_connect(connect),
-        AppScreen::Game(game) => update_game(game),
-        AppScreen::Editor(editor) => update_editor(editor),
-    };
-    next_frame().await;
-    set_fullscreen(true);
-    let mut fullscreen = true;
+    force_fullscreen();
 
     loop {
-        if is_key_pressed(KeyCode::F11) {
-            fullscreen = !fullscreen;
-            set_fullscreen(fullscreen);
-        }
         clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
         screen = match screen {
             AppScreen::Connect(connect) => update_connect(connect),
@@ -2509,18 +2543,7 @@ fn draw_field(label: &str, value: &str, rect: Rect, active: bool) {
             Color::new(0.12, 0.17, 0.24, 1.0)
         },
     );
-    let cursor = if active && ((get_time() * 2.0) as i32 % 2 == 0) {
-        "_"
-    } else {
-        ""
-    };
-    draw_text(
-        format!("{value}{cursor}"),
-        rect.x + 12.0,
-        rect.y + 30.0,
-        20.0,
-        WHITE,
-    );
+    draw_text(value, rect.x + 12.0, rect.y + 30.0, 20.0, WHITE);
 }
 
 fn draw_gradient_like_button(rect: Rect, label: &str, accent: Color) -> bool {
