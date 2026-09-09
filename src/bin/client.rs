@@ -34,7 +34,7 @@ fn window_conf() -> Conf {
         window_width: 1180,
         window_height: 820,
         high_dpi: true,
-        fullscreen: true,
+        fullscreen: false,
         window_resizable: true,
         ..Default::default()
     }
@@ -236,6 +236,18 @@ async fn main() {
 
     set_cursor_grab(false);
     show_mouse(true);
+
+    // Create a normal resizable Windows window first. With miniquad 0.4.6,
+    // startup fullscreen can leave a decorated fixed-size window. Apply
+    // fullscreen only after the native window has completed one frame.
+    clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
+    screen = match screen {
+        AppScreen::Connect(connect) => update_connect(connect),
+        AppScreen::Game(game) => update_game(game),
+        AppScreen::Editor(editor) => update_editor(editor),
+    };
+    next_frame().await;
+    set_fullscreen(true);
     let mut fullscreen = true;
 
     loop {
