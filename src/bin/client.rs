@@ -31,10 +31,10 @@ const MOUSE_RADIANS_PER_PIXEL: f32 = 0.0025;
 fn window_conf() -> Conf {
     Conf {
         window_title: "Maze Wars 3D - Multiplayer FPS".to_string(),
-        window_width: 1280,
-        window_height: 800,
-        high_dpi: true,
-        window_resizable: true,
+        window_width: 1180,
+        window_height: 820,
+        high_dpi: false,
+        window_resizable: false,
         ..Default::default()
     }
 }
@@ -634,15 +634,19 @@ fn update_game(mut game: GameState) -> AppScreen {
     let mut turn = 0.0;
     let mut wants_fire = false;
     if controls_enabled {
-        forward = axis(KeyCode::W, KeyCode::S);
+        let forward_pressed = is_key_down(KeyCode::W) || is_key_down(KeyCode::Up);
+        let backward_pressed = is_key_down(KeyCode::S) || is_key_down(KeyCode::Down);
+        forward =
+            if forward_pressed { 1.0 } else { 0.0 } - if backward_pressed { 1.0 } else { 0.0 };
         strafe = axis(KeyCode::D, KeyCode::A);
         turn =
             (axis(KeyCode::Right, KeyCode::Left) + axis(KeyCode::E, KeyCode::Q)).clamp(-1.0, 1.0);
         if game.cursor_grabbed {
             let mouse = mouse_delta_position();
-            let mouse_pixels_x = mouse.x * screen_width() * 0.5;
-            let look_delta =
-                -mouse_pixels_x * MOUSE_RADIANS_PER_PIXEL * game.settings.mouse_sensitivity;
+            // Macroquad 0.4.13 reports mouse delta in normalized local coordinates.
+            // Convert it back to logical pixels, matching the original browser movementX tuning.
+            let movement_x = -mouse.x * screen_width() * 0.5;
+            let look_delta = movement_x * MOUSE_RADIANS_PER_PIXEL * game.settings.mouse_sensitivity;
             if look_delta.is_finite() {
                 game.angle = normalize_angle(game.angle + look_delta);
             }
@@ -1002,16 +1006,29 @@ fn draw_game(game: &GameState) {
 
 fn draw_world(game: &GameState, view: Rect, palette: Palette) {
     let maze = &game.levels[game.level_index];
-    draw_rectangle(view.x, view.y, view.w, view.h * 0.5, palette.sky);
-    draw_rectangle(
-        view.x,
-        view.y + view.h * 0.5,
-        view.w,
-        view.h * 0.5,
-        palette.floor,
-    );
+    if game.settings.theme == VisualTheme::Classic {
+        let classic_bg = Color::new(6.0 / 255.0, 7.0 / 255.0, 10.0 / 255.0, 1.0);
+        draw_rectangle(view.x, view.y, view.w, view.h, classic_bg);
+        draw_line(
+            view.x,
+            view.y + view.h * 0.5,
+            view.x + view.w,
+            view.y + view.h * 0.5,
+            1.0,
+            Color::new(30.0 / 255.0, 41.0 / 255.0, 59.0 / 255.0, 1.0),
+        );
+    } else {
+        draw_rectangle(view.x, view.y, view.w, view.h * 0.5, palette.sky);
+        draw_rectangle(
+            view.x,
+            view.y + view.h * 0.5,
+            view.w,
+            view.h * 0.5,
+            palette.floor,
+        );
+    }
 
-    let ray_count = ((view.w / 2.0) as usize).clamp(240, 800);
+    let ray_count = 720usize.min(view.w.max(360.0) as usize);
     let stripe_width = view.w / ray_count as f32 + 0.7;
     let mut z_buffer = vec![0.0f32; ray_count];
 
@@ -1022,21 +1039,30 @@ fn draw_world(game: &GameState, view: Rect, palette: Palette) {
         let corrected = hit.distance * (ray_angle - game.angle).cos().abs().max(0.05);
         *z = corrected;
         let wall_height = (view.h / corrected).min(view.h * 1.6);
-        let fade = (1.0 / (1.0 + corrected * 0.11)).clamp(0.18, 0.95);
-        let base = if hit.side == 1 {
-            palette.wall_side
-        } else {
-            palette.wall
-        };
-        let wall_color = Color::new(base.r * fade, base.g * fade, base.b * fade, 1.0);
+        let wall_y = view.y + (view.h - wall_height) * 0.5;
         let x = view.x + index as f32 * view.w / ray_count as f32;
-        draw_rectangle(
-            x,
-            view.y + (view.h - wall_height) * 0.5,
-            stripe_width,
-            wall_height,
-            wall_color,
-        );
+
+        if game.settings.theme == VisualTheme::Classic {
+            let fill = if hit.side == 1 {
+                Color::new(9.0 / 255.0, 13.0 / 255.0, 21.0 / 255.0, 1.0)
+            } else {
+                Color::new(14.0 / 255.0, 21.0 / 255.0, 36.0 / 255.0, 1.0)
+            };
+            draw_rectangle(x, wall_y, stripe_width, wall_height, fill);
+            let intensity = (1.0 - (corrected / 18.0).min(1.0)).max(0.10);
+            let edge = Color::new(56.0 / 255.0, 189.0 / 255.0, 248.0 / 255.0, intensity * 0.90);
+            draw_rectangle(x, wall_y, stripe_width, 2.0, edge);
+            draw_rectangle(x, wall_y + wall_height - 2.0, stripe_width, 2.0, edge);
+        } else {
+            let fade = (1.0 / (1.0 + corrected * 0.11)).clamp(0.18, 0.95);
+            let base = if hit.side == 1 {
+                palette.wall_side
+            } else {
+                palette.wall
+            };
+            let wall_color = Color::new(base.r * fade, base.g * fade, base.b * fade, 1.0);
+            draw_rectangle(x, wall_y, stripe_width, wall_height, wall_color);
+        }
     }
 
     draw_remote_players(game, view, &z_buffer, ray_count, palette);
@@ -1330,7 +1356,7 @@ fn draw_hud(game: &GameState, maze: &Maze, view: Rect, palette: Palette) {
     );
     draw_text("FRAGS", score.x + 72.0, score.y + 45.0, 11.0, palette.muted);
 
-    let helper = "WASD Move   Mouse / arrows Turn   Space / Click Fire   TAB Leaderboard";
+    let helper = "WASD / ↑↓ Move   Mouse / ←→ Turn   Space / Click Fire   TAB Leaderboard";
     let hm = measure_text(helper, None, 11, 1.0);
     let helper_rect = Rect::new(
         view.x + view.w * 0.5 - hm.width * 0.5 - 14.0,
@@ -1536,14 +1562,20 @@ fn draw_weapon(game: &GameState, view: Rect, palette: Palette) {
 
 fn draw_header(game: &GameState, palette: Palette) {
     let sw = screen_width();
-    draw_rectangle(0.0, 0.0, sw, 72.0, Color::new(0.012, 0.018, 0.034, 0.98));
-    draw_line(0.0, 72.0, sw, 72.0, 1.0, Color::new(0.12, 0.17, 0.24, 1.0));
+    draw_rectangle(0.0, 0.0, sw, 82.0, Color::new(0.018, 0.024, 0.043, 0.99));
+    draw_line(0.0, 82.0, sw, 82.0, 1.0, Color::new(0.12, 0.17, 0.24, 1.0));
 
-    let logo = Rect::new(16.0, 16.0, 34.0, 34.0);
-    draw_rectangle(logo.x, logo.y, logo.w, logo.h, palette.accent);
+    let logo = Rect::new(18.0, 20.0, 38.0, 38.0);
+    draw_rectangle(
+        logo.x,
+        logo.y,
+        logo.w,
+        logo.h,
+        Color::new(0.18, 0.48, 0.90, 1.0),
+    );
     draw_centered("MW", logo, 15.0, Color::new(0.015, 0.025, 0.04, 1.0));
-    draw_text("MAZE WARS 3D", 62.0, 31.0, 21.0, WHITE);
-    let badge = Rect::new(218.0, 13.0, 174.0, 23.0);
+    draw_text("MAZE WARS 3D", 68.0, 34.0, 21.0, WHITE);
+    let badge = Rect::new(214.0, 16.0, 158.0, 22.0);
     draw_rectangle(
         badge.x,
         badge.y,
@@ -1559,24 +1591,26 @@ fn draw_header(game: &GameState, palette: Palette) {
         1.0,
         Color::new(0.1, 0.55, 0.62, 0.65),
     );
-    draw_centered("01-EDU MULTIPLAYER FPS", badge, 10.5, palette.accent);
-    draw_text("DDA Raycasting", 62.0, 53.0, 11.0, palette.muted);
-    draw_text("|", 153.0, 53.0, 11.0, DARKGRAY);
-    draw_text("UDP Native Client", 164.0, 53.0, 11.0, palette.muted);
-    draw_text("|", 270.0, 53.0, 11.0, DARKGRAY);
-    draw_text(">50 FPS Target", 281.0, 53.0, 11.0, palette.health);
+    draw_centered("01-EDU MULTIPLAYER FPS", badge, 9.5, palette.accent);
+    draw_text(
+        "DDA Raycasting  •  UDP Socket Arch  •",
+        68.0,
+        57.0,
+        11.0,
+        palette.muted,
+    );
+    draw_text(">50 FPS Target", 274.0, 57.0, 11.0, palette.health);
 
     let level_rects = level_button_rects();
+    let labels = ["L1: NOVICE", "L2: INTERMEDIATE", "L3: MASTER"];
     for (index, rect) in level_rects.iter().enumerate() {
-        let active = game.level_index == index;
-        draw_dark_button(*rect, &format!("L{}", index + 1), active);
+        draw_dark_button(*rect, labels[index], game.level_index == index);
     }
-    let proc = procedural_button_rect();
-    draw_dark_button(proc, "PROCEDURAL", false);
+    draw_dark_button(procedural_button_rect(), "✦ PROCEDURAL", false);
 
     let gateway = gateway_button_rect();
     let gateway_text = format!("GATEWAY {}", server_host(&game.server));
-    draw_dark_button(gateway, &shorten(&gateway_text, 20), false);
+    draw_dark_button(gateway, &shorten(&gateway_text, 18), false);
     draw_dark_button(editor_button_rect(), "CUSTOM", game.level_index == 3);
     draw_dark_button(
         score_button_rect(),
@@ -1592,18 +1626,19 @@ fn draw_header(game: &GameState, palette: Palette) {
 
 fn draw_info_bar(game: &GameState, palette: Palette) {
     let maze = &game.levels[game.level_index];
+    draw_text(&maze.name, 28.0, 108.0, 15.0, WHITE);
     draw_text(
         format!(
-            "{}   {}x{} sector   {} dead ends",
-            maze.name,
+            "{}x{} sector  •  {}  •  {} dead ends",
             maze.width,
             maze.height,
+            maze.difficulty,
             maze.dead_ends()
         ),
-        18.0,
-        96.0,
-        13.0,
-        LIGHTGRAY,
+        28.0,
+        128.0,
+        11.5,
+        palette.muted,
     );
     let helper = if game.cursor_grabbed {
         "ESC releases mouse"
@@ -1613,32 +1648,35 @@ fn draw_info_bar(game: &GameState, palette: Palette) {
     let m = measure_text(helper, None, 12, 1.0);
     draw_text(
         helper,
-        screen_width() - m.width - 18.0,
-        96.0,
+        screen_width() - m.width - 28.0,
+        118.0,
         12.0,
         palette.muted,
     );
 }
 
 fn draw_feature_cards(palette: Palette) {
-    let y = screen_height() - 80.0;
-    let gap = 9.0;
-    let margin = 16.0;
+    let y = screen_height() - 102.0;
+    let gap = 10.0;
+    let margin = 26.0;
     let w = (screen_width() - margin * 2.0 - gap * 3.0) / 4.0;
     let cards = [
-        ("AUTHENTIC MAZE WARS 3D", "DDA + eyeball avatars"),
-        ("UDP CLIENT-SERVER", "Authoritative Rust server"),
-        ("3 LEVELS + GENERATOR", "Progressive dead ends"),
-        ("LEVEL EDITOR", "Editable custom mazes"),
+        ("AUTHENTIC MAZE WARS 3D", "DDA raycasting + eyeball avatars"),
+        (
+            "UDP CLIENT-SERVER NETWORK",
+            "Authoritative Rust multiplayer",
+        ),
+        ("3 LEVELS + GENERATOR", "Progressive maze difficulty"),
+        ("LEVEL EDITOR + CUSTOM MAPS", "Editable connected arenas"),
     ];
     for (index, (title, sub)) in cards.iter().enumerate() {
-        let rect = Rect::new(margin + index as f32 * (w + gap), y, w, 62.0);
+        let rect = Rect::new(margin + index as f32 * (w + gap), y, w, 86.0);
         draw_rectangle(
             rect.x,
             rect.y,
             rect.w,
             rect.h,
-            Color::new(0.012, 0.02, 0.035, 0.96),
+            Color::new(0.018, 0.025, 0.043, 0.98),
         );
         draw_rectangle_lines(
             rect.x,
@@ -1646,11 +1684,12 @@ fn draw_feature_cards(palette: Palette) {
             rect.w,
             rect.h,
             1.0,
-            Color::new(0.1, 0.15, 0.22, 1.0),
+            Color::new(0.12, 0.17, 0.24, 1.0),
         );
-        draw_circle(rect.x + 14.0, rect.y + 18.0, 4.0, palette.health);
-        draw_text(*title, rect.x + 25.0, rect.y + 22.0, 11.0, palette.accent);
-        draw_text(*sub, rect.x + 14.0, rect.y + 45.0, 10.0, palette.muted);
+        draw_circle(rect.x + 15.0, rect.y + 20.0, 4.5, palette.health);
+        draw_text(*title, rect.x + 27.0, rect.y + 24.0, 11.0, palette.accent);
+        draw_text(*sub, rect.x + 14.0, rect.y + 51.0, 10.5, palette.muted);
+        draw_text("READY", rect.x + 14.0, rect.y + 72.0, 9.5, palette.health);
     }
 }
 
@@ -2161,20 +2200,19 @@ fn top_action_at_mouse(level_index: usize) -> Option<TopAction> {
 }
 
 fn level_button_rects() -> [Rect; 3] {
-    let start = 408.0;
     [
-        Rect::new(start, 18.0, 54.0, 34.0),
-        Rect::new(start + 58.0, 18.0, 54.0, 34.0),
-        Rect::new(start + 116.0, 18.0, 54.0, 34.0),
+        Rect::new(390.0, 22.0, 74.0, 36.0),
+        Rect::new(469.0, 22.0, 108.0, 36.0),
+        Rect::new(582.0, 22.0, 74.0, 36.0),
     ]
 }
 
 fn procedural_button_rect() -> Rect {
-    Rect::new(582.0, 18.0, 106.0, 34.0)
+    Rect::new(661.0, 22.0, 104.0, 36.0)
 }
 
 fn gateway_button_rect() -> Rect {
-    Rect::new((screen_width() - 430.0).max(700.0), 18.0, 198.0, 34.0)
+    Rect::new(screen_width() - 375.0, 22.0, 150.0, 36.0)
 }
 
 fn editor_button_rect() -> Rect {
@@ -2193,12 +2231,7 @@ fn settings_button_rect() -> Rect {
 }
 
 fn game_view_rect() -> Rect {
-    Rect::new(
-        16.0,
-        108.0,
-        screen_width() - 32.0,
-        (screen_height() - 204.0).max(360.0),
-    )
+    Rect::new(26.0, 140.0, screen_width() - 52.0, screen_height() - 260.0)
 }
 
 fn settings_panel_rect() -> Rect {
@@ -2564,20 +2597,20 @@ fn draw_connect_background() {
 fn palette(theme: VisualTheme) -> Palette {
     match theme {
         VisualTheme::Classic => Palette {
-            bg: Color::new(0.007, 0.01, 0.02, 1.0),
-            panel: Color::new(0.012, 0.025, 0.05, 1.0),
-            panel_alt: Color::new(0.022, 0.04, 0.07, 1.0),
-            border: Color::new(0.08, 0.42, 0.50, 1.0),
-            accent: Color::new(0.22, 0.83, 0.95, 1.0),
-            accent_alt: Color::new(0.65, 0.35, 0.95, 1.0),
+            bg: Color::new(7.0 / 255.0, 9.0 / 255.0, 17.0 / 255.0, 1.0),
+            panel: Color::new(8.0 / 255.0, 13.0 / 255.0, 25.0 / 255.0, 1.0),
+            panel_alt: Color::new(13.0 / 255.0, 20.0 / 255.0, 36.0 / 255.0, 1.0),
+            border: Color::new(56.0 / 255.0, 189.0 / 255.0, 248.0 / 255.0, 0.34),
+            accent: Color::new(56.0 / 255.0, 189.0 / 255.0, 248.0 / 255.0, 1.0),
+            accent_alt: Color::new(168.0 / 255.0, 85.0 / 255.0, 247.0 / 255.0, 1.0),
             text: WHITE,
-            muted: Color::new(0.52, 0.59, 0.69, 1.0),
-            sky: Color::new(0.018, 0.045, 0.08, 1.0),
-            floor: Color::new(0.018, 0.02, 0.032, 1.0),
-            wall: Color::new(0.70, 0.86, 0.91, 1.0),
-            wall_side: Color::new(0.52, 0.68, 0.73, 1.0),
-            health: Color::new(0.20, 0.86, 0.50, 1.0),
-            danger: Color::new(0.94, 0.26, 0.30, 1.0),
+            muted: Color::new(148.0 / 255.0, 163.0 / 255.0, 184.0 / 255.0, 1.0),
+            sky: Color::new(6.0 / 255.0, 7.0 / 255.0, 10.0 / 255.0, 1.0),
+            floor: Color::new(6.0 / 255.0, 7.0 / 255.0, 10.0 / 255.0, 1.0),
+            wall: Color::new(14.0 / 255.0, 21.0 / 255.0, 36.0 / 255.0, 1.0),
+            wall_side: Color::new(9.0 / 255.0, 13.0 / 255.0, 21.0 / 255.0, 1.0),
+            health: Color::new(52.0 / 255.0, 211.0 / 255.0, 153.0 / 255.0, 1.0),
+            danger: Color::new(239.0 / 255.0, 68.0 / 255.0, 68.0 / 255.0, 1.0),
         },
         VisualTheme::Cyberpunk => Palette {
             bg: Color::new(0.018, 0.005, 0.035, 1.0),
