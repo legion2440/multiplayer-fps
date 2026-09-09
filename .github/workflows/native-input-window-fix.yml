@@ -1,0 +1,98 @@
+name: Native input and window fix
+
+on:
+  push:
+    branches:
+      - native-input-window-fix
+    paths:
+      - .github/workflows/native-input-window-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: native-input-window-fix
+          fetch-depth: 0
+
+      - name: Apply fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          client = Path("src/bin/client.rs")
+          text = client.read_text()
+
+          replacements = [
+              (
+                  "        window_resizable: false,",
+                  "        window_resizable: true,",
+              ),
+              (
+                  "    game.kill_feed\n        .retain(|entry| Instant::now() < entry.expires_at);\n\n    if is_key_pressed(KeyCode::Tab) {",
+                  "    game.kill_feed\n        .retain(|entry| Instant::now() < entry.expires_at);\n\n    // Miniquad's desktop cursor grab needs to be reasserted while gameplay owns the mouse.\n    set_cursor_grab(game.cursor_grabbed);\n    show_mouse(!game.cursor_grabbed);\n\n    if is_key_pressed(KeyCode::Tab) {",
+              ),
+              (
+                  "    let controls_enabled = game.overlay == Overlay::None;",
+                  "    let controls_enabled = game.overlay == Overlay::None && game.health > 0;",
+              ),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f"client pattern not found: {old!r}")
+              text = text.replace(old, new, 1)
+          client.write_text(text)
+
+          server = Path("src/bin/server.rs")
+          text = server.read_text()
+          old = """            player.angle = 0.0;
+            player.health = 100;
+            player.respawn_at = None;
+        }
+    }
+}
+
+fn remove_timed_out("""
+          new = """            player.angle = 0.0;
+            player.health = 100;
+            player.respawn_at = None;
+            player.input = InputState::default();
+            player.shoot_requested = false;
+        }
+    }
+}
+
+fn remove_timed_out("""
+          if old not in text:
+              raise SystemExit("server respawn pattern not found")
+          server.write_text(text.replace(old, new, 1))
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: dtolnay/rust-toolchain@1.74.0
+
+      - name: Format
+        run: cargo +stable fmt --all
+      - name: Rust 1.74 check
+        run: cargo +1.74.0 check --locked --all-targets
+      - name: Test
+        run: cargo +stable test --locked
+      - name: Clippy
+        run: cargo +stable clippy --all-targets --locked -- -D warnings
+      - name: Release build
+        run: cargo +stable build --release --locked --bin server --bin client
+
+      - name: Commit validated fixes
+        shell: bash
+        run: |
+          rm .github/workflows/native-input-window-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/bin/client.rs src/bin/server.rs .github/workflows/native-input-window-fix.yml
+          git commit -m "fix: stabilize native input and cursor capture"
+          git push origin HEAD:native-input-window-fix
