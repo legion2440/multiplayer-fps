@@ -11,17 +11,6 @@ use std::io;
 use std::net::UdpSocket;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-#[cfg(target_os = "windows")]
-use std::ptr;
-#[cfg(target_os = "windows")]
-use winapi::shared::windef::HWND;
-#[cfg(target_os = "windows")]
-use winapi::um::winuser::{
-    FindWindowW, GetMonitorInfoW, MonitorFromWindow, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE,
-    GWL_STYLE, HWND_TOP, MONITORINFO, MONITOR_DEFAULTTONEAREST, SWP_FRAMECHANGED, SWP_SHOWWINDOW,
-    WS_EX_APPWINDOW, WS_POPUP, WS_VISIBLE,
-};
-
 fn draw_text<T: AsRef<str>>(
     text: T,
     x: f32,
@@ -46,48 +35,9 @@ fn window_conf() -> Conf {
         window_height: 820,
         high_dpi: true,
         fullscreen: false,
-        window_resizable: false,
+        window_resizable: true,
         ..Default::default()
     }
-}
-
-#[cfg(target_os = "windows")]
-fn force_fullscreen() {
-    unsafe {
-        let title: Vec<u16> = "Maze Wars 3D - Multiplayer FPS"
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-        let hwnd: HWND = FindWindowW(ptr::null(), title.as_ptr());
-        if hwnd.is_null() {
-            return;
-        }
-
-        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        let mut info: MONITORINFO = std::mem::zeroed();
-        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
-        if GetMonitorInfoW(monitor, &mut info) == 0 {
-            return;
-        }
-
-        SetWindowLongPtrW(hwnd, GWL_STYLE, (WS_POPUP | WS_VISIBLE) as isize);
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, WS_EX_APPWINDOW as isize);
-        let rect = info.rcMonitor;
-        SetWindowPos(
-            hwnd,
-            HWND_TOP,
-            rect.left,
-            rect.top,
-            rect.right - rect.left,
-            rect.bottom - rect.top,
-            SWP_FRAMECHANGED | SWP_SHOWWINDOW,
-        );
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn force_fullscreen() {
-    set_fullscreen(true);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,7 +236,6 @@ async fn main() {
 
     set_cursor_grab(false);
     show_mouse(true);
-    force_fullscreen();
 
     loop {
         clear_background(Color::new(0.008, 0.011, 0.02, 1.0));
@@ -2199,6 +2148,9 @@ fn disconnect(game: &GameState) {
 }
 
 fn connect_after_game(game: &GameState, status: &str) -> AppScreen {
+    // Do not let character events queued while releasing the gameplay cursor
+    // leak into the address field on the first gateway frame.
+    while get_char_pressed().is_some() {}
     AppScreen::Connect(ConnectScreen {
         server: game.server.clone(),
         username: game.username.clone(),
@@ -2708,14 +2660,30 @@ fn palette(theme: VisualTheme) -> Palette {
     }
 }
 
+fn field_accepts_char(field: ActiveField, ch: char) -> bool {
+    match field {
+        ActiveField::Server => {
+            ch.is_ascii_alphanumeric() || matches!(ch, '.' | ':' | '-' | '_' | '[' | ']' | '%')
+        }
+        ActiveField::Username | ActiveField::Alias => {
+            ch.is_alphanumeric() || matches!(ch, ' ' | '_' | '-' | '.')
+        }
+    }
+}
+
 fn edit_active_field(screen: &mut ConnectScreen) {
-    let target = match screen.active {
+    let active = screen.active;
+    let target = match active {
         ActiveField::Server => &mut screen.server,
         ActiveField::Username => &mut screen.username,
         ActiveField::Alias => &mut screen.alias,
     };
+
+    // Sanitize both persisted text and fresh character events. Macroquad/miniquad
+    // can leave non-text key events in the character queue after Esc on Windows.
+    target.retain(|ch| field_accepts_char(active, ch));
     while let Some(ch) = get_char_pressed() {
-        if !ch.is_control() && target.len() < 64 {
+        if field_accepts_char(active, ch) && target.len() < 64 {
             target.push(ch);
         }
     }
